@@ -1,0 +1,4235 @@
+openapi: 3.1.0
+
+info:
+  title: RetroHive API
+  version: "1.0.0"
+  description: |
+    JSON REST API for a retro software collection. Every endpoint except
+    `/meta` and `/auth/verify` requires a bearer token.
+
+    Notes here and in the source refer to "the real form" or "the engine's own
+    screen". That was the web interface this application used to serve itself,
+    which this API was extracted from and which no longer exists. The reference
+    is historical - it explains why a rule is what it is, rather than pointing at
+    somewhere to go and look.
+
+    Feed this file to openapi-generator or swift-openapi-generator to get a
+    typed client instead of hand-writing one.
+
+servers:
+  - url: https://your-host/api/v1
+    description: Replace with your own host
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Items
+  - name: Titles
+    description: >-
+      The software itself, as against your copy of it. The counterpart to a
+      hardware model.
+  - name: Images
+  - name: Taxonomy
+  - name: Sync
+  - name: Notifications
+  - name: Metadata
+
+paths:
+  /meta:
+    get:
+      tags: [Auth]
+      summary: Server capabilities and enum values
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      api_version: { type: string }
+                      currency: { type: string }
+                      server_time: { type: string, format: date-time }
+                      authenticated: { type: boolean }
+                      max_upload_bytes: { type: integer }
+                      image_kinds: { type: array, items: { $ref: "#/components/schemas/EnumOption" } }
+                      conditions: { type: array, items: { $ref: "#/components/schemas/EnumOption" } }
+                      completeness: { type: array, items: { $ref: "#/components/schemas/EnumOption" } }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Exchange credentials for a token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                device_name: { type: string, example: "Tommy's iPhone" }
+                platform: { type: string, enum: [ios, macos, android, other] }
+                scope: { type: string, enum: [read, write], default: write }
+      responses:
+        "201":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string, example: "rvt_9f8e7d6c5b4a" }
+                      token_type: { type: string, example: Bearer }
+                      scope: { type: string, enum: [read, write] }
+                      expires_at: { type: [string, "null"], format: date-time }
+                      user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the token used for this call
+      responses:
+        "204": { description: Revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/verify/resend:
+    post:
+      tags: [Auth]
+      summary: Resend the email verification link
+      description: >-
+        Answers the same way whether or not the account exists, or already
+        needs no confirming - a real response either way would let a
+        caller enumerate usernames one guess at a time. Throttled the
+        same as a login attempt.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+      responses:
+        "200": { description: "Always the same message, regardless of what actually happened" }
+        "429": { description: Too many attempts - throttled }
+
+  /auth/register/status:
+    get:
+      tags: [Auth]
+      summary: Whether registration is open, and under what name
+      description: >-
+        A client for registration_allowed() from the monolith, exposed
+        so a client can ask this before it ever shows a username field.
+        Answers the same way for a wrong secret, a closed instance, and
+        an address nobody ever issued - allowed:false with the same
+        reason string either way, so a caller cannot tell the three
+        apart by which message came back.
+      parameters:
+        - name: route
+          in: query
+          schema: { type: string, enum: [register, join, invite] }
+          description: Which door is being tried. Defaults to register.
+        - name: token
+          in: query
+          schema: { type: string }
+          description: The secret address's own token (join), or an invitation's own token (invite).
+      responses:
+        "200":
+          description: >-
+            allowed (boolean), reason (string, present only when not
+            allowed), invite_email (the address an invitation was sent
+            to, present only for a valid invite - never a value the
+            caller supplied).
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account - public sign-up, a secret address, or an accepted invitation
+      description: >-
+        A client for registration_submit() from the monolith - same
+        validation, same create_user() call, same invite_redeem() on an
+        accepted invitation, same registration_apply_approval()
+        afterward. On an invitation, the account's email is always the
+        invitation's own address; any email sent in the body is
+        ignored rather than trusted, the same way the monolith's own
+        form disables that field entirely rather than only hiding it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [route, username, password, password_confirm]
+              properties:
+                route: { type: string, enum: [register, join, invite] }
+                token: { type: string, description: Required for join and invite. }
+                username: { type: string }
+                display_name: { type: string }
+                email: { type: string, description: Ignored for join and invite - the invitation's own address is used instead. }
+                password: { type: string, minLength: 10 }
+                password_confirm: { type: string }
+      responses:
+        "201":
+          description: >-
+            status (active or pending), message, and - only when active
+            - the same shape a fresh login returns: token, token_id,
+            token_type, scope, expires_at, user. A pending account
+            (email confirmation or administrator approval required)
+            carries token:null; there is nothing to sign in with yet.
+        "403": { description: Registration is closed, or the token names no invitation this instance issued }
+        "422": { description: A field failed validation - details is keyed by field name }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: The current user and token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /profile:
+    get:
+      tags: [Auth]
+      summary: Your own account
+      responses:
+        "200": { description: OK }
+    patch:
+      tags: [Auth]
+      summary: Change your name, address or password
+      description: >
+        Only what is named changes. `password` also requires `current_password`:
+        holding a valid token and being the account holder are not the same thing.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                current_password: { type: string }
+      responses:
+        "200": { description: OK }
+        "422": { description: Refused, with the field named in details }
+
+  /profile/avatar:
+    post:
+      tags: [Auth]
+      summary: Set your avatar
+      description: >
+        Multipart, in a field called `avatar`. The same path the web form takes,
+        so one place decides what a valid picture is and what it is resized to.
+        No crop: the web form lets somebody drag a square over the picture first,
+        which needs a picture on screen to drag over — here the middle is kept,
+        as it is on the web without JavaScript.
+      responses:
+        "200": { description: OK, with the new address }
+        "422": { description: Nothing arrived, or it was not an image }
+    delete:
+      tags: [Auth]
+      summary: Remove it
+      description: Back to initials on a coloured circle.
+      responses:
+        "204": { description: Gone }
+
+  /profile/notifications:
+    get:
+      tags: [Auth]
+      summary: What you want to be told about
+      description: >
+        Every kind with its label, description, and whether this account wants it
+        in the app and by mail. `explicit` is false when the account has never
+        said and is taking the kind's default.
+      responses:
+        "200": { description: OK }
+    patch:
+      tags: [Auth]
+      summary: Change some of them
+      description: Naming one kind changes that kind and leaves the rest alone.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prefs:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    properties:
+                      in_app:  { type: boolean }
+                      by_mail: { type: boolean }
+      responses:
+        "200": { description: OK }
+
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: The instance settings, described
+      description: >
+        Sections of fields, each with a name, a kind (text, url, int, bool,
+        select, secret), a label, help and the current value. A select carries
+        its options; an int carries min and max; a secret never sends its value,
+        only `is_set`. Described so a client can draw the form without knowing
+        the settings in advance. Administrator only.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+    patch:
+      tags: [Admin]
+      summary: Change some of them
+      description: >
+        Everything is checked before anything is written, so a request setting a
+        good host and a bad port changes neither.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                settings:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200": { description: OK }
+        "422": { description: Refused, with each field named in details }
+        "403": { description: Administrator access is required }
+
+  /admin/registration:
+    get:
+      tags: [Admin]
+      summary: Who may create an account, and the secret address if that's the mode
+      description: >-
+        A dedicated pair of endpoints rather than part of the generic
+        settings schema above - registration's real shape (four modes
+        including invite, a three-way approval, a rotatable secret URL
+        that is computed rather than stored) doesn't fit that schema's
+        select/bool/secret vocabulary without leaving invite mode
+        unreachable or lying about a type, the same reasoning auth
+        methods and hardware sync already have their own endpoints
+        rather than being squeezed into something more generic.
+      responses:
+        "200":
+          description: >-
+            mode (closed/public/secret/invite), approval
+            (auto/email/admin), mail_enabled, mail_verified (both
+            gate which options this endpoint's own PATCH will
+            accept), and secret_url - only present, and only
+            meaningful, when mode is secret.
+        "403": { description: Administrator access is required }
+    patch:
+      tags: [Admin]
+      summary: Change the mode or approval, or issue a new secret address
+      description: >-
+        Either mode and approval, or rotate_secret alone - rotating is
+        its own action rather than a side effect of saving the other
+        two fields, the same reasoning the real app's own settings
+        page gives: a secret that changes every time the page is saved
+        is a secret nobody can hand out. Refuses invite mode outright
+        when no mail relay is configured. Rotating works regardless of
+        the current mode - the secret it produces is simply unused
+        unless mode is actually secret, so there is nothing unsafe
+        about generating one ahead of switching to that mode.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: { type: string, enum: [closed, public, secret, invite] }
+                approval: { type: string, enum: [auto, email, admin] }
+                rotate_secret: { type: boolean }
+      responses:
+        "200": { description: Same shape as the GET above, reflecting what was actually saved }
+        "422": { description: An unreachable mode (invite without mail configured), with the reason in details }
+        "403": { description: Administrator access is required }
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: Notices for this account
+      description: >
+        Newest first. The unread total rides along in `meta` so a badge costs one
+        request rather than two, along with a `cursor` to pass back as `since`.
+        `link_path` is a path and never a URL - an absolute address written into
+        a row goes wrong the moment the instance moves - so a client joins it to
+        its own host.
+      parameters:
+        - name: since
+          in: query
+          description: Only notices newer than this. Anything strtotime() reads.
+          schema: { type: string }
+        - name: unread
+          in: query
+          description: Only the unread ones. Anything but "0" means yes.
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: 1 to 200. Defaults to 50.
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200": { description: OK }
+        "422": { description: since was not a timestamp the server could read }
+
+  /notifications/read:
+    post:
+      tags: [Notifications]
+      summary: Mark some read, or all of them
+      description: >
+        `ids` takes an array, or the string "all" - which is the server's
+        spelling and not worth a second endpoint. An empty array means all too.
+        At most 200 ids per call. Answers with how many were marked and what is
+        left unread. Marking is a write, so a read-only token is refused.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  oneOf:
+                    - type: array
+                      items: { type: integer }
+                    - type: string
+                      enum: [all]
+      responses:
+        "200": { description: OK }
+        "403": { description: A read-only token }
+        "422": { description: ids was neither an array nor "all" }
+
+  /metadata/search:
+    get:
+      tags: [Metadata]
+      summary: Look a title up in the configured sources
+      description: >
+        Asks every enabled provider and returns what they said, with the ones
+        that failed named in `meta.errors` rather than silently missing. A write
+        token, because searching spends somebody's API quota. Nothing is stored:
+        what the caller does with a result is decided when they write it to a
+        library.
+      parameters:
+        - name: q
+          in: query
+          description: The title to look for. Required unless item_id is given, in which case that entry's own title is the default.
+          schema: { type: string }
+        - name: item_id
+          in: query
+          description: >-
+            An entry to search from. Its own platform, and the domain its
+            category belongs to, are used automatically unless platform_id
+            overrides the platform - the same derivation the real app's own
+            lookup page does, so a hardware entry asks hardware sources and
+            a software one asks software sources without the caller having
+            to work either out itself.
+          schema: { type: integer }
+        - name: platform_id
+          in: query
+          description: Narrow to one platform. Not an access boundary, only a filter.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: >-
+            Results, plus meta.query, meta.domain (present when item_id
+            named an entry), meta.errors, meta.providers.
+        "403": { description: A read-only token }
+        "404": { description: item_id names no entry, or none this token may read }
+        "422": { description: q was missing with no item_id to default from, or platform_id names no platform }
+
+  /metadata/preview:
+    post:
+      tags: [Metadata]
+      summary: What a candidate would set on an entry
+      description: >-
+        A client for four functions that already existed in core with
+        nothing exposing them - metadata_to_item_fields(),
+        metadata_to_hardware_fields(), metadata_spec_rows(), and
+        metadata_images_already_here() - plus metadata_title_resembles().
+        Not new logic; a way to reach logic that only ever ran inside a
+        server-rendered template before now. The candidate travels in the
+        request body exactly as the search returned it, rather than being
+        looked up by an id it doesn't have - the same way the real app's
+        own review form carries it as a hidden field, so a preview and
+        the apply that follows it are guaranteed to agree on what the
+        candidate actually said.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidate]
+              properties:
+                candidate: { type: object, description: Exactly one object from a search response's own data array. }
+                item_id: { type: integer, description: Optional - without it, only looks_right and fields are meaningful; hardware_fields, spec_rows and current values need a real entry to compare against. }
+                query: { type: string, description: What was actually searched for, for looks_right - defaults to the entry's own title, then the candidate's own. }
+      responses:
+        "200":
+          description: >-
+            looks_right (bool), fields, hardware_fields (each entry:
+            field, label, value, current - hardware_fields always empty
+            for a non-hardware entry or no item_id), spec_rows (each:
+            label, value, current, index), credits (each: index,
+            role_slug, name - a candidate's own structured credits,
+            passed through with an index so apply can be told which
+            ones were ticked; empty for a source with no structured
+            credit concept, the same as spec_rows), documents (passed
+            through unchanged), images (each candidate image plus
+            already_here).
+        "403": { description: A read-only token }
+        "404": { description: item_id names no entry this token may read }
+        "422": { description: candidate was missing or not an object }
+
+  /metadata/apply:
+    post:
+      tags: [Metadata]
+      summary: Write whichever fields, hardware detail, spec rows, documents or images were ticked
+      description: >-
+        A client for the real app's own metadata_apply(), copied field by
+        field rather than re-derived: developer and publisher resolved
+        through company_id_for_name() on the entry's own side of the shop
+        (a lookup on a machine never files its maker as a software
+        house), hardware detail refused outright for a non-hardware
+        entry regardless of what apply_hw named, artwork fetched
+        server-side with the same thumbnail fallback and duplicate
+        detection the real handler already has, specification rows
+        merged into what the entry already has rather than overwritten,
+        documents kept as links only - nothing is downloaded but the
+        artwork itself. apply_credits writes a real, linked credit (a
+        person or a company, a role, a title) rather than a line of
+        text - the entry gains a title first if it has none yet, made
+        from its own current fields, since a credit belongs to a title
+        and not to a copy. Silently skipped rather than erroring: a
+        credit whose role does not exist in this library, or one
+        already recorded for that person and role on that title.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [item_id, candidate]
+              properties:
+                item_id: { type: integer }
+                candidate: { type: object, description: Exactly the object preview was given, or the search returned. }
+                apply: { type: array, items: { type: string }, description: Item field names from a preview's own fields array. }
+                apply_hw: { type: array, items: { type: string }, description: Hardware field names - ignored entirely on a non-hardware entry. }
+                apply_spec: { type: array, items: { type: string }, description: Spec row index values, as strings, from a preview's own spec_rows. }
+                apply_credits: { type: array, items: { type: string }, description: "Index values, as strings, into the candidate's own credits array (each a role_slug/name pair)." }
+                documents: { type: array, items: { type: string }, description: Document index values, as strings, from the candidate's own documents array. }
+                artwork: { type: array, items: { type: string }, description: Image index values, as strings, from the candidate's own images array. }
+      responses:
+        "200":
+          description: >-
+            fields_applied, hardware_applied, images_added,
+            images_already_there, documents_added, spec_rows_added,
+            credits_added, provider_label - counts, not the data itself,
+            since the caller already has everything it just sent.
+        "403": { description: A read-only token, or that library is not one this account may write }
+        "404": { description: item_id names no entry }
+        "422": { description: candidate was missing or not an object, or nothing at all was ticked across apply/apply_hw/apply_spec/apply_credits/documents/artwork }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Every account
+      description: >
+        Administrator only. `meta.admin_count` rides along because the one rule
+        this screen must enforce — never remove the last administrator — cannot
+        be checked on the device without it. The directory each account signs in
+        through is named rather than given as an id.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+
+    post:
+      tags: [Admin]
+      summary: Make an account
+      description: >
+        Through the same `create_user()` the installer and `bin/create-user.php`
+        use, so the account gets a personal library on the way past — the one
+        shelf everybody is promised, and without which a new account cannot
+        catalogue anything. Access to any other library is granted separately.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, email]
+              properties:
+                username: { type: string, pattern: "^[a-zA-Z0-9._-]{3,60}$" }
+                password: { type: string, minLength: 10 }
+                email: { type: string }
+                display_name: { type: string }
+                role: { type: string, enum: [admin, user], default: user }
+      responses:
+        "201": { description: Created }
+        "403": { description: Administrator access is required }
+        "422": { description: A taken username or address, a short password, or an unknown role }
+
+  /admin/users/{id}:
+    patch:
+      tags: [Admin]
+      summary: Change one account
+      description: >
+        Absent fields are left alone. Two things are refused rather than warned
+        about: removing the last active administrator, and changing your own
+        role — undoing that would need the role just given up.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [admin, user] }
+                is_active: { type: boolean }
+                display_name: { type: string }
+                email: { type: string }
+                password:
+                  type: string
+                  description: Blank or omitted means "don't change it". At least 10 characters when set.
+                auth_method_id:
+                  type: [integer, "null"]
+                  description: >-
+                    Which directory this account signs in through. null moves
+                    it to the local database - resolved server-side to the
+                    protected local method's own row, since the column itself
+                    is NOT NULL. A real directory's id moves it there instead.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+        "404": { description: No account with that id }
+        "422": { description: An unknown role, an unknown directory, a password under 10 characters, the last administrator, or your own role }
+
+    delete:
+      tags: [Admin]
+      summary: Remove an account outright
+      description: >-
+        Refused for your own account, and for the last administrator who can
+        still sign in - either leaves the instance with no way back short of
+        the database itself.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Removed }
+        "403": { description: Your own account, or the last administrator who can sign in }
+        "404": { description: No account with that id }
+
+  /admin/libraries:
+    get:
+      tags: [Admin]
+      summary: Every library, including ones the caller cannot read
+      description: >
+        Deliberately not `/libraries`, which answers with what the caller may
+        see — an administrator needs the list complete, since a library nobody
+        can see is one nobody can fix. `item_count` is every entry in it for the
+        same reason: it decides whether the library can be deleted, and a count
+        filtered by access would make a full one look empty.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+    post:
+      tags: [Admin]
+      summary: Make one
+      description: The caller becomes the owner. The slug follows the name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 160 }
+                description: { type: string, maxLength: 500 }
+                kind: { type: string, enum: [private, shared] }
+                color: { type: string, example: "#cba6f7" }
+      responses:
+        "201": { description: Created }
+        "403": { description: Administrator access is required }
+        "422": { description: A missing name, an unknown kind, or a colour that is not six hex digits }
+
+  /admin/libraries/{id}:
+    patch:
+      tags: [Admin]
+      summary: Change one
+      description: >
+        Absent fields are left alone. Renaming moves the slug with it — a library
+        renamed from Loft to Basement with /libraries/loft in the address bar is
+        a small lie that outlives everybody who remembers it. `is_active` closes
+        a library: everything in it stays, and it stops appearing.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+        "404": { description: No library with that id }
+        "422": { description: Nothing to change, or a field the server did not like }
+    delete:
+      tags: [Admin]
+      summary: Delete an empty one
+      description: >
+        Only empty, and never the last. A library holds entries, photographs, a
+        filing tree and its own copy of the vocabulary; removing all of that on
+        one request is not something this endpoint will do, and an instance with
+        no libraries has nowhere to put the next thing somebody adds.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Gone }
+        "403": { description: Administrator access is required }
+        "404": { description: No library with that id }
+        "422": { description: It still holds entries, or it is the only one }
+
+  /admin/logs:
+    get:
+      tags: [Admin]
+      summary: The log, filtered
+      description: >
+        Administrator only, for the same reason the screen is: the security
+        stream names who signed in from where. `meta` carries the per-channel
+        counts and the events that have actually happened, so a client can draw
+        the same tabs and filters the web viewer offers without four requests.
+      parameters:
+        - name: channel
+          in: query
+          schema: { type: string, enum: [all, security, server, metadata], default: all }
+        - name: event
+          in: query
+          description: Exact, or a prefix with a trailing asterisk.
+          schema: { type: string }
+        - name: severity
+          in: query
+          description: This syslog level or more severe.
+          schema: { type: integer, minimum: 0, maximum: 7 }
+        - name: actor
+          in: query
+          schema: { type: integer }
+        - name: since
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          description: Substring of the message or the actor's name.
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+        "422": { description: An unknown channel, or a severity outside 0-7 }
+
+  /admin/status:
+    get:
+      tags: [Admin]
+      summary: Service detail for an authenticated administrator
+      description: >
+        What /status and /status.json, at the site root and unauthenticated,
+        deliberately do not say - their own comments explain why disclosing a
+        version number or service detail there would make them a
+        reconnaissance endpoint. An administrator asking the same question
+        from inside a session already knows what this instance is, so this
+        answers with the real version, migration and schema status, and
+        which metadata sources are configured - never their stored
+        credentials, only whether each is on and when it last answered.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      app:
+                        type: object
+                        properties:
+                          version: { type: string }
+                          released: { type: string, format: date }
+                          api_version: { type: string }
+                          php_version: { type: string }
+                      database:
+                        type: object
+                        properties:
+                          migrations_applied: { type: integer }
+                          migrations_pending: { type: array, items: { type: string } }
+                          migrations_total: { type: integer }
+                          schema_ok: { type: boolean }
+                          needs_update: { type: boolean }
+                      metadata_providers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type: { type: string }
+                            name: { type: string }
+                            is_enabled: { type: boolean }
+                            last_used_at: { type: string, format: date-time, nullable: true }
+                            last_error: { type: string, nullable: true }
+                      checked_at: { type: string, format: date-time }
+        "403": { description: Administrator access is required }
+
+  /admin/maintenance:
+    get:
+      tags: [Admin]
+      summary: The instance jobs, and what each one currently finds
+      description: >
+        Every check is run to answer this, which is the point: the reason to run
+        a repair is that its check found something. `rows` are examples, capped
+        by the check itself. Library-scoped jobs are not here - they belong to a
+        library and are reached through it.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+
+  /admin/maintenance/{job}:
+    post:
+      tags: [Admin]
+      summary: Run one repair
+      description: >
+        The check is run again afterwards, so `count` is what is left rather than
+        what was found before. Recorded in the security log. Jobs that only
+        report are refused rather than silently doing nothing.
+      parameters:
+        - name: job
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+        "404": { description: No instance job by that name }
+        "422": { description: That job reports and does not repair }
+
+  /tokens:
+    get:
+      tags: [Auth]
+      summary: List this account's tokens
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Auth]
+      summary: Create a token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                scope: { type: string, enum: [read, write] }
+                platform: { type: string }
+                expires_at:
+                  type: string
+                  description: A real calendar date, not "expires in N days" - optional; omit for a token that never expires. Must be in the future.
+      responses:
+        "201": { description: Created, with the plaintext token shown once }
+        "422": { description: A missing name, or an expires_at that isn't a real future date }
+
+  /tokens/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke a token
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /items:
+    get:
+      tags: [Items]
+      summary: List catalogue entries
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Free-text search }
+        - { name: platform, in: query, schema: { type: string }, description: Library slug }
+        - { name: library, in: query, schema: { type: string }, description: Library slug - the shelf it is on }
+        - { name: title_id, in: query, schema: { type: integer }, description: Every copy of one title }
+        - { name: work, in: query, schema: { type: string }, description: Every release of one work, across platforms }
+        - name: category
+          in: query
+          schema: { type: string }
+          description: >-
+            One branch of one platform's tree, by that copy's own slug
+            (`amiga-platformer`), and everything beneath it. Right for hardware
+            and software, where the platform is part of the answer.
+        - name: genre
+          in: query
+          schema: { type: string }
+          description: >-
+            A branch across every platform that has a copy of it, by the
+            *template* slug (`movie-action`) rather than any one copy's. The tree
+            is duplicated per platform, so `category=blu-ray-movie-action` means
+            action films on Blu-ray and nothing else; `genre=movie-action` means
+            action films. Combine with `platform` to narrow to one format.
+            Everything beneath each copy is included, so `genre=adventure` also
+            finds what is filed under Point and click.
+        - name: kind
+          in: query
+          schema: { type: string, enum: [machine, peripheral, movie, tv_show, music, game, software] }
+          description: >-
+            machine, peripheral, movie, tv_show and music are category roles and
+            are matched on the column. game and software are asked of the
+            ancestry instead, because software carries no role of its own.
+        - { name: developer, in: query, schema: { type: string } }
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: decade, in: query, schema: { type: integer, example: 1990 } }
+        - { name: min_rating, in: query, schema: { type: integer, minimum: 1, maximum: 10 } }
+        - { name: condition, in: query, schema: { $ref: "#/components/schemas/Condition" } }
+        - { name: photos, in: query, schema: { type: string, enum: [none, some] } }
+        - { name: status, in: query, schema: { type: string, enum: [owned, wishlist, ordered, sold, all] } }
+        - { name: tag, in: query, schema: { type: string }, description: Comma-separated tag slugs; all must match }
+        - { name: barcode, in: query, schema: { type: string } }
+        - { name: list, in: query, schema: { type: string, enum: [wishlist] }, deprecated: true }
+        - { name: sort, in: query, schema: { type: string, enum: [title, title_desc, year, year_desc, rating, rating_asc, value, price, added, updated, platform] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 24, maximum: 200 } }
+        - { name: include, in: query, schema: { type: string, enum: [images] } }
+        - { name: If-None-Match, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag: { schema: { type: string } }
+            X-Total-Count: { schema: { type: integer } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Item" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "304": { description: Not modified }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Items]
+      summary: Create an entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemWrite" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Item" } }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /items/bulk:
+    post:
+      tags: [Items]
+      summary: Create up to 100 entries in one request
+      description: Partial success is normal; each entry reports its own outcome.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: "#/components/schemas/ItemWrite" }
+      responses:
+        "201": { description: At least one entry created }
+        "422": { description: Nothing could be created }
+
+  /items/random:
+    get:
+      tags: [Items]
+      summary: One entry at random, honouring the /items filters
+      responses:
+        "200": { description: OK }
+        "404": { description: Nothing matches }
+
+  /barcode/{code}:
+    get:
+      tags: [Items]
+      summary: Find entries by barcode
+      description: A miss returns 200 with found=false, not a 404.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      barcode: { type: string }
+                      found: { type: boolean }
+                      items: { type: array, items: { $ref: "#/components/schemas/Item" } }
+
+  /items/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Items]
+      summary: One entry, with images and tags
+      responses:
+        "200":
+          description: OK
+          headers: { ETag: { schema: { type: string } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Item" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Items]
+      summary: Partial update
+      description: Only the keys you send are changed. Send null to clear a field.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemWrite" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Item" } }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Items]
+      summary: Delete an entry and its photos
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /items/{id}/links:
+    get:
+      tags: [Items]
+      summary: What is fitted to an entry, and what it is fitted to
+      description: >
+        Both directions: `contains` is what sits inside this entry, `inside` is
+        what this entry sits in. The same table read two ways — a client given
+        one of them has half an answer.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "404": { description: No entry with that id }
+    post:
+      tags: [Items]
+      summary: Fit one entry to another
+      description: >
+        `direction` decides which way round — `contains` makes this entry the
+        machine, `inside` makes it the part. Without it a client would have to
+        know which of two entries is the parent before it could say they are
+        related, which is a question about the API rather than about the things.
+        Loops are refused: a catalogue that lets a machine sit inside itself is
+        no longer describing anything.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [other_id]
+              properties:
+                other_id: { type: integer }
+                direction: { type: string, enum: [contains, inside], default: contains }
+                relation:
+                  type: string
+                  enum: [installed_in, bundled_with, spare_for, connects_to]
+                  default: installed_in
+                note: { type: string, maxLength: 255 }
+      responses:
+        "201": { description: Linked, with both directions returned }
+        "422": { description: No such entry, an unknown relation, itself, or a loop }
+
+  /items/{id}/links/candidates:
+    get:
+      tags: [Items]
+      summary: What may be installed in this machine, or which machines this peripheral could go in
+      description: >
+        Already filtered by the rules, so a client is not offering choices the
+        server will refuse: only hardware, only peripherals, only into a machine,
+        and only where the peripheral either lists this machine as compatible or
+        names nothing at all. Platforms have to agree — a Zorro card does not go
+        in a C64, and a catalogue that says it does is worth less than no
+        catalogue. direction decides which side of that rule this entry plays:
+        contains (the default) treats it as the machine, listing peripherals that
+        could be fitted into it; inside treats it as the peripheral, listing
+        machines it could be fitted into. Calling this from a peripheral's own
+        edit page without direction=inside answers a different question than the
+        one being asked - every candidate machine gets checked as though it were
+        a peripheral fitting into this peripheral, which is never true, so the
+        list comes back empty regardless of what's actually compatible.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: direction
+          in: query
+          schema: { type: string, enum: [contains, inside], default: contains }
+          description: contains if this entry is the machine being asked about; inside if it's the peripheral.
+      responses:
+        "200": { description: OK }
+        "404": { description: No entry with that id }
+
+  /items/{id}/links/{linkId}:
+    delete:
+      tags: [Items]
+      summary: Take one apart again
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: linkId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Gone }
+        "404": { description: No such link on this entry }
+
+  /items/{id}/images/import:
+    post:
+      tags: [Items]
+      summary: Fetch a picture from a metadata source and attach it
+      description: >
+        The server does the fetching, not the client: it already knows how to
+        check what came back is an image, how to resize it, and how to notice the
+        same picture arriving twice. `provenance` is always `official` — scraped
+        artwork is the publisher's, not a photograph of somebody's own copy, and
+        the two answer different questions. A picture already on the entry is
+        reported as `already_here` rather than refused.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string }
+                kind: { type: string, default: box_front }
+                caption: { type: string, maxLength: 255 }
+      responses:
+        "200": { description: Imported, or already here }
+        "404": { description: No entry with that id }
+        "422": { description: Not a usable address, an unknown kind, or the fetch failed }
+
+  /items/{id}/images:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Images]
+      summary: List an entry's photos
+      description: >-
+        `kind` says what a picture shows; `provenance` says where it came from.
+        Filter on the latter to draw the publisher's artwork and somebody's own
+        photographs as two separate galleries.
+      parameters:
+        - name: provenance
+          in: query
+          schema: { type: string, enum: [official, personal] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Image" } }
+    post:
+      tags: [Images]
+      summary: Upload photos
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                kind: { $ref: "#/components/schemas/ImageKind" }
+                provenance: { $ref: "#/components/schemas/ImageProvenance" }
+          application/json:
+            schema:
+              type: object
+              required: [file_base64]
+              properties:
+                file_base64: { type: string, description: "Raw base64 or a data: URL" }
+                kind: { $ref: "#/components/schemas/ImageKind" }
+                provenance: { $ref: "#/components/schemas/ImageProvenance" }
+                caption: { type: string }
+                filename: { type: string }
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Image" } }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /images/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Images]
+      summary: Change a photo's metadata or make it the cover
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: { $ref: "#/components/schemas/ImageKind" }
+                provenance:
+                  allOf: [{ $ref: "#/components/schemas/ImageProvenance" }]
+                  description: >-
+                    Moves the picture between the two galleries. Unlike the
+                    upload, an unknown value here is refused rather than rounded
+                    to personal - a move that silently did nothing would read as
+                    the request having been ignored.
+                caption: { type: [string, "null"] }
+                sort_order: { type: integer }
+                is_primary: { type: boolean }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: "#/components/schemas/Image" } }
+    delete:
+      tags: [Images]
+      summary: Delete a photo
+      responses:
+        "204": { description: Deleted }
+
+  /models:
+    get:
+      tags: [Items]
+      summary: The canonical models an entry can be filed under
+      description: >
+        `items.model_id` has been writable for a while with no way to discover an
+        id to put in it, which makes a writable field a field nobody can use.
+        Narrowed by `category_id` the way the web's picker narrows it — a model
+        belongs to a branch, and a list of every model on an instance is not a
+        picker but a haystack. `platform_id` narrows it the coarser way for a
+        client that has a machine but not yet a branch.
+      parameters:
+        - name: category_id
+          in: query
+          schema: { type: integer }
+        - name: platform_id
+          in: query
+          schema: { type: integer }
+        - name: library_id
+          in: query
+          schema: { type: integer }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: No library with that id, or not yours to see }
+
+  /profile/libraries:
+    get:
+      tags: [Libraries]
+      summary: Everything the "Library access" page needs, in one call
+      description: >-
+        A client for the real app's own three-tab access page, combined
+        the same way it combines them for one render rather than three
+        separate requests. mine is what this account already has, with
+        the counts the real page shows; invites and owner_offers are
+        what's waiting on an answer - an invitation and an ownership
+        offer are the same kind of thing, something somebody else has
+        proposed and nothing has happened until this account answers;
+        joinable is a published shelf not yet taken on.
+
+
+        `meta.waiting` adds the first two, so a client drawing a badge does not
+        have to fetch both lists and decide for itself which of them count.
+        Joinable libraries are deliberately not in it: nobody is waiting on an
+        answer about those - they stand open to everybody - and counting them
+        would put a permanent badge on a menu entry.
+      responses:
+        "200": { description: mine, invites, owner_offers, joinable }
+        "403": { description: Sign in first }
+
+  /libraries/{id}/join:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Libraries]
+      summary: Take on a published shelf
+      description: >-
+        Only a library that is genuinely open (shared, and public_read
+        or public_write) - this accepts an open invitation, it does not
+        let anybody into a private library. Grants contributor where the
+        library is open to write, viewer otherwise, and never downgrades
+        somebody already holding more.
+      responses:
+        "200": { description: The library, as this account now sees it }
+        "422": { description: That library is not open to join }
+        "403": { description: A read-only token }
+
+  /libraries/{id}/leave:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Libraries]
+      summary: Take a library off your own shelf
+      description: >-
+        Refused on a personal library - whoever's it is, that is the one
+        place an account always has, or a place this account was merely
+        let into and cannot be made to leave through this button - and
+        refused on a library this account owns outright, since leaving
+        one's own library would strand it. Rejoining later is always
+        possible where it was ever possible at all.
+      responses:
+        "204": { description: Left }
+        "422": { description: A personal library, or one this account owns }
+        "403": { description: A read-only token }
+        "404": { description: No library with that id }
+
+  /libraries/{id}/invite/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [accept, decline] }
+    post:
+      tags: [Libraries]
+      summary: Answer an invitation waiting on this account
+      description: >-
+        Only ever this account's own pending invitation - one it did not
+        ask for and has not answered grants nothing regardless. Whoever
+        sent it is told either way.
+      responses:
+        "200": { description: status (accepted/declined), library_name }
+        "404": { description: No invitation waiting for this account there }
+        "403": { description: A read-only token }
+
+  /libraries/{id}/ownership/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [accept, decline, withdraw] }
+    post:
+      tags: [Libraries]
+      summary: Answer an ownership offer, or withdraw one still in flight
+      description: >-
+        accept/decline are the offered account's own answer; withdraw is
+        the current owner taking the offer back before anyone has
+        answered. Accepting swaps the owning column and the two
+        membership rows that follow from it in one step - the outgoing
+        owner stays on as a Library Admin rather than being dropped to
+        nothing, since they were running the place a moment before.
+      responses:
+        "200": { description: status (accepted/declined/withdrawn), library_name when accepted }
+        "404": { description: No offer outstanding for that library }
+        "403": { description: Not this account's offer to answer, or not the owner withdrawing one }
+
+  /libraries:
+    post:
+      tags: [Libraries]
+      summary: Make a library of your own
+      description: >
+        Not the admin route. `POST /admin/libraries` administers an instance and
+        needs an administrator; this is what any signed-in person may do, as the
+        web has always allowed. The caller owns it, which is what makes it theirs
+        to fill.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 120 }
+                description: { type: string, maxLength: 500 }
+                kind: { type: string, enum: [private, shared], default: private }
+                color: { type: string, example: "#cba6f7" }
+                with_structure:
+                  type: boolean
+                  description: Copy in the shared starter platforms, makers, and hardware models.
+                with_examples:
+                  type: boolean
+                  description: >-
+                    Add a handful of example entries across hardware, software, video,
+                    and music. Brings the starter structure along automatically even if
+                    with_structure was not also sent - an example needs something to
+                    point at.
+      responses:
+        "201":
+          description: >-
+            Created. meta.note describes what was added, when with_structure or
+            with_examples was sent - the same summary the web form's own create
+            page shows.
+        "422": { description: A missing name, an unknown kind, or a colour that is not six hex digits }
+    get:
+      tags: [Taxonomy]
+      summary: Libraries you can read
+      description: >-
+        A library is a shelf with members and is the only access boundary in the
+        system. Only libraries this account can read are returned, each with the
+        caller's access level and a count of the entries they can see in it.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Library" } }
+
+  /libraries/{id}/contents:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Libraries]
+      summary: What a library actually holds
+      description: >-
+        A client for the real app's own library_contents_index() and
+        library_contents_summary() - built because a bare item count is
+        a poor thing to make a delete decision against. Every entry,
+        paginated, plus the platforms, makers, models, and places the
+        library defined for itself - the things people forget a
+        library owns until it's gone. Owner or instance administrator;
+        it was administrator-only originally, which the real app's own
+        comment calls the wrong way round, since "what is actually in
+        here" is the first thing an owner wants once a library has
+        grown past what they can hold in their head.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+      responses:
+        "200":
+          description: >-
+            library, summary (counts across every kind of thing the
+            library holds or defines), entries (paginated, 100 per
+            page), platforms, companies, locations, hardware, software,
+            members. meta.page/pages/total describe the entries list.
+        "403": { description: Only the owner, or an administrator, may see what a library holds }
+        "404": { description: No such library }
+
+  /libraries/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Libraries]
+      summary: A library's own settings
+      description: >-
+        Name, description, kind, colour, and visibility - owner only. A
+        client for the real form's own save logic: the same guards apply,
+        in the same order. A personal library cannot become shared.
+        Switching away from shared, or from a public visibility, removes
+        anyone who joined that way - an invitation somebody accepted
+        always wins over this. Switching from shared to private drops any
+        member who could write down to read-only; the owner keeps their
+        own level. Membership actions (invite, uninvite, changing what a
+        member may do) are a separate, later piece - not here.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 120 }
+                description: { type: string, maxLength: 500 }
+                kind: { type: string, enum: [private, shared] }
+                visibility: { type: string, enum: [members, public, public_write], default: members }
+                color: { type: string, example: "#cba6f7" }
+      responses:
+        "200":
+          description: >-
+            Saved. meta.note describes anyone turned out or demoted by a
+            visibility change, when that happened.
+        "403": { description: Only an owner can change that library }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: A missing name, or a personal library asked to become shared }
+    put:
+      tags: [Libraries]
+      summary: Same as PATCH
+      responses: { "200": { description: Saved } }
+
+  /admin/libraries/{id}/disable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Take a library out of circulation
+      description: >-
+        Reachable by the library's own owner as well as an administrator -
+        what an owner gets instead of deleting, when the instance does not
+        allow that. Never a personal library.
+      responses:
+        "200": { description: OK }
+        "403": { description: A personal library, or neither the owner nor an administrator }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/libraries/{id}/enable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Bring a library back into circulation
+      description: Administrator-only - coming back is a decision the owner alone doesn't get to make unilaterally.
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/libraries/{id}/owner:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Hand a library to another account directly, without an offer to accept
+      description: >-
+        The owner's own route to a handover is an offer that waits for
+        acceptance - right between two members, wrong for an administrator
+        sorting out a library whose owner has left. Sets owner_id directly
+        and clears any offer in flight.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer, description: Must be an existing, active account. }
+      responses:
+        "200": { description: OK }
+        "403": { description: A personal library }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: user_id missing, or not an active account }
+
+  /admin/libraries/{id}/purge:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Delete a library and everything in it, permanently
+      description: >-
+        Ignores the instance's own libraries.deletable switch and ignores
+        whether the library still holds anything - the administrator's own
+        version of the delete button, for "I know, delete it anyway." The
+        library's own name has to be sent exactly as confirm_name; this is
+        the one action here that cannot be walked back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm_name]
+              properties:
+                confirm_name: { type: string, description: Must match the library's own name exactly. }
+      responses:
+        "200": { description: "name and gone (a count per kind of thing removed)" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: confirm_name did not match }
+
+  /libraries/{id}/structure-status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Libraries]
+      summary: What this library holds, against what there is to copy
+      description: >-
+        The same per-file comparison the real edit page's own resync panel
+        shows - available count, this library's own count, and whether it
+        is behind.
+      responses:
+        "200": { description: OK }
+        "403": { description: Only an owner can change that library }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/example-library:
+    post:
+      tags: [Admin]
+      summary: Create a shared example library
+      description: >-
+        A client for the same seed_shared_example_library() both installers
+        already call at install time, made reachable afterward for an
+        instance that never had one. Never touches a personal library - a
+        real, separate library called "The club shelf" is created instead,
+        with examples across hardware, software, video, and music.
+        Idempotent by design, matching both installers' own reliance on
+        it: an instance that already has any shared library is told so
+        rather than getting a second one.
+      responses:
+        "201": { description: Created }
+        "422": { description: A shared library already exists on this instance }
+
+  /libraries/{id}/populate:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Libraries]
+      summary: Add starter structure and/or examples to a library that already exists
+      description: >-
+        A client for the same library_populate() /libraries already calls at
+        creation, made reachable for a library that started out empty, and
+        carrying the same range of choices the real edit page's own resync
+        panel offers: which parts specifically (makers, platforms,
+        categories, hardware models, software models, environments,
+        locations - unticked by default, since a shelf layout is a guess
+        about somebody's house rather than reference data), whether to
+        refresh the templates from the repository first, and whether to
+        overwrite rows this library already edited rather than only add
+        what is missing. Already-added examples are not duplicated by
+        asking again.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh: { type: boolean }
+                with_structure: { type: boolean }
+                with_examples: { type: boolean }
+                overwrite: { type: boolean }
+                parts:
+                  type: array
+                  items: { type: string, enum: [makers, credit_roles, platforms, categories, hardware_models, software_models, environments, locations] }
+      responses:
+        "200": { description: "meta.note describes what was actually done" }
+        "403": { description: Only an owner can change that library }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: Nothing was asked for - no refresh, structure, or examples }
+
+  /libraries/{id}/members:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Libraries]
+      summary: Who is on this library
+      description: Owner or Library Admin. Owner listed first, then by decreasing access.
+      responses:
+        "200": { description: OK }
+        "403": { description: That library is not one you may administer }
+    post:
+      tags: [Libraries]
+      summary: Invite somebody
+      description: >-
+        An offer, not access: the row lands 'pending' and grants nothing
+        until accepted. A client for the real edit page's own invite
+        action - the same grantable-levels check, the same notification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, access]
+              properties:
+                user_id: { type: integer }
+                access: { type: string, enum: [viewer, contributor, editor, curator, admin, owner] }
+      responses:
+        "201": { description: Invited }
+        "403": { description: That library is not one you may administer }
+        "422": { description: No such account, or not a level this library hands out }
+
+  /libraries/{id}/members/{memberId}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: memberId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Libraries]
+      summary: Change what an accepted member may do
+      description: >-
+        Refused while the invitation is still pending - there is nothing
+        to change yet. The owner's own access is never set here, and only
+        the owner may hand out the owner level itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access]
+              properties:
+                access: { type: string, enum: [viewer, contributor, editor, curator, admin, owner] }
+      responses:
+        "200": { description: Changed }
+        "403": { description: Forbidden - the owner's own row, or owner-only action attempted by somebody else }
+        "422": { description: Not a known level, or the invitation has not been accepted yet }
+    delete:
+      tags: [Libraries]
+      summary: Remove access
+      description: The owner cannot be removed from their own library.
+      responses:
+        "204": { description: Removed }
+        "403": { description: That library is not one you may administer, or this is the owner }
+
+  /admin/metadata-providers:
+    get:
+      tags: [Admin]
+      summary: Configured sources, and every type available to add
+      description: >-
+        data is the configured sources - id, type, name, is_enabled,
+        priority, params (the type's own defaults merged with any
+        stored override), last_error. meta.types is every type this
+        instance knows how to speak to, keyed the same way params
+        would reference them: label, configured (already added or
+        not), and credentials - the handful of params, if any, that
+        are real secrets or account-specific values rather than
+        tuning knobs, each with its own label and whether it should
+        be shown masked. Empty for a source that needs no key at all.
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Admin]
+      summary: Add a source - configuration only, not the network half
+      description: >-
+        The real form always tests a source before adding it, with "add it
+        without checking" as the only way past a failed or unreachable
+        check. This API cannot make that call at all, so it requires the
+        same flag outright: skip_probe must be true, or the request is
+        refused. Probing a source, asking it what platforms it knows, and
+        matching them by name are a separate, later piece - they need a
+        live call to wherever the source actually lives.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, skip_probe]
+              properties:
+                type: { type: string, description: One of the keys from GET's own meta.types. }
+                skip_probe: { type: boolean, description: Must be true. }
+                priority: { type: integer, default: 100 }
+                params:
+                  type: object
+                  description: Overrides merged over the type's own defaults, coerced to each default's type.
+      responses:
+        "201": { description: Added, unchecked - meta.note says so plainly }
+        "422": { description: Unknown type, already configured, or skip_probe not sent }
+
+  /admin/metadata-providers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Admin]
+      summary: Enable, disable, reprioritise, or change a source's own params
+      description: >-
+        Only the keys actually sent are changed - a params object with one
+        key updates that key and leaves every other stored value alone,
+        the same "what comes back is authoritative, for what it names"
+        rule the real form applies to credential fields specifically and
+        this applies to every param.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_enabled: { type: boolean }
+                priority: { type: integer }
+                params: { type: object }
+      responses:
+        "200": { description: Saved }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Admin]
+      summary: Remove a source
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/auth-methods:
+    get:
+      tags: [Admin]
+      summary: Directory authentication methods
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Admin]
+      summary: Add a directory - configuration only
+      description: >-
+        Unlike a metadata source, saving a directory method never requires
+        a test - the real save handler reaches its insert with no network
+        step in between. Test is a separate, optional action - see
+        POST /admin/auth-methods/test. Inspect (looking up a real user) is
+        not part of this API, needing a real server to answer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                type: { type: string, enum: [ldap, ad], default: ldap }
+                name: { type: string, maxLength: 120 }
+                description: { type: string }
+                is_enabled: { type: boolean }
+                sort_order: { type: integer, default: 10 }
+                params:
+                  type: object
+                  description: Overrides merged over the type's own defaults - host, base_dn, bind_dn, bind_password, and so on.
+      responses:
+        "201": { description: Created }
+        "422": { description: Missing name }
+
+  /admin/auth-methods/test:
+    post:
+      tags: [Admin]
+      summary: Test a directory connection without saving
+      description: >-
+        Works on whatever is submitted, not what was last saved - a brand
+        new directory that has never been created, or an existing one's
+        edited-but-unsaved settings. An id is optional; when given and a
+        stored row exists, submitted fields are merged over the stored
+        ones the same way a save would be, so testing does not require
+        retyping a bind password already on file. Needs the PHP ldap
+        extension; a clear, honest answer either way, not just success or
+        silence.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: integer, description: An existing directory's id, to test against its own stored params merged with what's submitted. Omit or 0 for a directory that does not exist yet. }
+                type: { type: string, enum: [ldap, ad] }
+                params: { type: object }
+      responses:
+        "200":
+          description: ok (boolean), message, and details (an array of further diagnostic lines) - always 200, since a failed test is still an answered question.
+
+  /admin/auth-methods/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Admin]
+      summary: Change a directory's own settings
+      description: >-
+        Only the keys sent are changed, the same rule metadata source
+        params follow. A blank bind_password in the submitted params
+        means "keep the stored one" - it is never blanked by its own
+        absence, or by a save that did not mean to touch it.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                is_enabled: { type: boolean }
+                sort_order: { type: integer }
+                params: { type: object }
+      responses:
+        "200": { description: Saved }
+        "403": { description: The local database method cannot be disabled }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Admin]
+      summary: Remove a directory
+      description: Refused for the protected local method, or while any account still uses it.
+      responses:
+        "204": { description: Removed }
+        "403": { description: Protected, or still in use }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/auth-methods/{id}/groups:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Admin]
+      summary: A directory's own group-to-access mappings
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Admin]
+      summary: Map a directory group to a role and library access
+      description: >-
+        Resolved at the person's own next sign-in, against whatever
+        groups the directory reports for them then - this only stores
+        the mapping.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_name]
+              properties:
+                group_name: { type: string, description: The directory's own group name or DN. }
+                role: { type: string, enum: [user, admin], default: user }
+                default_access: { type: string, enum: [none, viewer, contributor, editor, curator, admin], default: none }
+                priority: { type: integer, default: 100 }
+                library_grants:
+                  type: object
+                  description: libraryId => one of viewer, contributor, editor, curator, admin.
+      responses:
+        "201": { description: Added }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: No group name sent }
+
+  /admin/auth-methods/{id}/groups/{mapId}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: mapId, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Admin]
+      summary: Remove a group mapping
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/update:
+    get:
+      tags: [Admin]
+      summary: Software update status
+      description: >-
+        Derived, read-only status against a real release feed - not a
+        stored setting, so not part of /admin/settings. Auto-checks at
+        most once a day on request, the same staleness rule the real
+        settings page's own "updates" tab already applies on load.
+      responses:
+        "200":
+          description: >-
+            current_version, latest_version (null if never successfully
+            checked), update_available, release_url, checked_at, and
+            error (the reason the last check failed, if it did).
+
+  /admin/update/check:
+    post:
+      tags: [Admin]
+      summary: Check for an update right now
+      description: Forces a real check against the release feed, ignoring the daily staleness rule.
+      responses:
+        "200": { description: Same shape as GET /admin/update, reflecting the fresh check }
+
+  /admin/system-status:
+    get:
+      tags: [Admin]
+      summary: Instance-wide performance and capacity
+      description: >-
+        PHP memory and opcache status, system load average, disk space,
+        database size, one genuine timing sample from the request that
+        fetched it, and real, accumulated request statistics from the
+        last 24 hours. Performance and capacity, not collection content -
+        administrator-only, since disk paths, memory figures, and
+        database size describe the server itself rather than anything a
+        library member has a reason to see. The single-sample timing
+        figure is exactly that - one call, not an average - but the
+        request statistics section is a genuine rolling total, built
+        from every real API call this instance answers, counted per
+        hour rather than logged one row per call so it never grows
+        unbounded.
+      responses:
+        "200":
+          description: >-
+            php (version, memory_used_mb, memory_peak_mb, memory_limit,
+            opcache_enabled), system (load_average or null on platforms
+            without one, disk_free_gb, disk_total_gb, disk_used_pct),
+            database (size_mb, tables, item_count, table_counts - a
+            row count per table for the handful that grow with real
+            use: items, users, libraries, item_images, titles,
+            hardware_models, software_models, companies, api_tokens,
+            logs), request
+            (sampled_at_ms, query_ms - a single sample, not the
+            requests section below), app_version, server_time, and
+            requests (window_hours, total, avg_ms, by_status as counts
+            per 2xx/3xx/4xx/5xx, by_source as [{source, count}] where
+            source is a token's own declared platform or "web" for a
+            session-based call, top_routes as the ten busiest
+            method+route pairs with call count, average time, and
+            max_ms (the single slowest call folded into the window -
+            an average alone can hide it), slow_routes as up to ten
+            method+route pairs sorted by average time descending
+            rather than call count, restricted to routes with at least
+            5 calls in the window so a single slow outlier can't
+            crowd out a route that's consistently slow, same shape as
+            top_routes, timeline as one zero-filled entry per hour for
+            the last 24 real hours with requests and errors counted,
+            and recent -
+            window_minutes (180), bucket_minutes (5), sources (every
+            source seen in the window), and timeline as one zero-filled
+            entry per 5-minute bucket for the last 3 real hours, each
+            with requests, errors, and by_source as {source: count} -
+            closer to real time than the hourly timeline above, kept
+            for a much shorter window on purpose since that is all the
+            table behind it is pruned down to hold), and top_clients as
+            up to ten of the most recently active real devices (revoked
+            tokens excluded) - name, platform, scope, the owning user's
+            username and display_name, last_used_at, last_used_ip, and
+            created_at. "Most active" here means most recently seen, not
+            a call count - api_tokens carries no per-device request
+            tally of its own, only the timestamp every authenticated
+            call already updates.
+        "403": { description: That area is for administrators }
+
+  /platforms:
+    get:
+      tags: [Taxonomy]
+      summary: Platforms, with counts of what you can see on each
+      description: >-
+        A platform is the machine an entry runs on. It is not an access boundary
+        and carries no access level; the counts hanging off it are filtered to
+        what the caller can see. Before 1.3 this lived at `GET /libraries`,
+        which is what led the API to authorise against the wrong column.
+
+        Without `library_id`, every platform across every library the caller
+        can read comes back - an account with two libraries that both copied
+        "Amiga" in from the template set sees "Amiga" twice, each a genuinely
+        different row. Pass `library_id` to scope to one library's own copy
+        instead, the shape a picker built for a single library's own form
+        actually needs.
+      parameters:
+        - name: library_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Scope to one library's own platforms instead of every library the caller can read.
+        - name: domain
+          in: query
+          schema: { type: string, enum: [hardware, software, video, audio] }
+          description: >-
+            Scopes `item_count` to one section. Without it the count is every
+            section at once, which is right for a platform list and wrong for a
+            section's own filter bar - the C64 has games, so an unscoped count
+            offered it under Video, where it holds nothing.
+        - name: non_empty
+          in: query
+          schema: { type: string }
+          description: >-
+            Any value: drop platforms whose `item_count` is zero. Combine with
+            `domain` to mean "platforms this section actually has entries on".
+            Off by default, because a picker for filing an entry needs the empty
+            platforms most of all.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Platform" } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a platform
+      description: >-
+        Owner-or-better on the library, not merely curator - a platform is
+        the root a whole branch of the filing tree hangs from, and the web
+        screen already treats adding or changing one as a step above
+        ordinary curation (can_edit_platform(), not can_structure_library()).
+        Creating one also creates its branch in the category tree.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                domains:
+                  type: array
+                  items: { type: string, enum: [hardware, software, video, audio] }
+                  description: >-
+                    Which sections this platform takes part in, and so which
+                    browsers offer it. Absent leaves it alone; present and empty
+                    is refused, because a platform in no section cannot be filed
+                    under or browsed. Omitted on create, the column's own default
+                    applies - hardware and software.
+                vendor_id:
+                  type: integer
+                  nullable: true
+                  description: A company from the same library, or omitted.
+                year_introduced: { type: integer, nullable: true }
+                accent_color: { type: string, example: "#cba6f7" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Platform" }
+        "422": { description: A missing or duplicate name, a year out of range, or a maker from another library }
+        "403": { description: Ownership of this library is required }
+
+  /platforms/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update a platform
+      description: A key you omit keeps its current value, the same contract as /titles/{id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                vendor_id: { type: integer, nullable: true }
+                year_introduced: { type: integer, nullable: true }
+                accent_color: { type: string }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing or duplicate name, a year out of range, or a maker from another library }
+        "403": { description: Ownership of this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "403": { description: Ownership of this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a platform
+      description: >-
+        Refused while any entry is filed under this machine. Once genuinely
+        empty, the branch it grew in the category tree is removed with it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: An entry is still filed under this machine }
+        "403": { description: Ownership of this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /titles:
+    get:
+      tags: [Titles]
+      summary: Canonical titles
+      description: >-
+        The software itself, as against your copies of it. Use this to link a
+        new entry to something already catalogued rather than retyping its
+        metadata, and to check what you already own before adding a copy.
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Match against name and subtitle }
+        - { name: platform_id, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Title" } }
+    post:
+      tags: [Titles]
+      summary: Create a title
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, platform_id]
+              properties:
+                name: { type: string }
+                subtitle: { type: string }
+                sort_name: { type: string }
+                platform_id: { type: integer }
+                category_id: { type: integer }
+                developer: { type: string, description: Plain name; created if new }
+                publisher: { type: string, description: Plain name; created if new }
+                release_year: { type: integer }
+                release_date: { type: string, format: date }
+                language: { type: string }
+                region: { type: string }
+                external_url: { type: string }
+                synopsis: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Title" }
+        "422": { description: Validation failed }
+  /titles/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Titles]
+      summary: One title
+      description: >-
+        Shared reference data - readable by anyone who can read the API at
+        all, since what is controlled is the copies, not the fact that a work
+        exists.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Title" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Titles]
+      summary: Update a title
+      description: >-
+        A key you omit keeps its current value rather than being cleared -
+        unlike items, the model behind this endpoint always revalidates the
+        full row, so an omitted field is read back from what is already
+        stored before saving.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                subtitle: { type: string }
+                sort_name: { type: string }
+                platform_id: { type: integer }
+                category_id: { type: integer }
+                developer: { type: string, description: Plain name; created if new }
+                publisher: { type: string, description: Plain name; created if new }
+                release_year: { type: integer }
+                release_date: { type: string, format: date }
+                language: { type: string }
+                region: { type: string }
+                external_url: { type: string }
+                synopsis: { type: string }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Title" }
+        "422": { description: Validation failed }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Titles]
+      summary: Same as PATCH
+      description: Both verbs reach the same handler, matching every other write endpoint in this API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                platform_id: { type: integer }
+      responses:
+        "200": { description: Updated }
+        "422": { description: Validation failed }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Titles]
+      summary: Remove a title
+      description: >-
+        Copies keep working: items.title_id is set to null rather than the
+        entries being removed, so a release disappearing from the reference
+        list does not take anyone's catalogue with it.
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /locations:
+    get:
+      tags: [Locations]
+      summary: A library's location tree
+      description: >-
+        Flat, already in display order - depth-first, floors before names
+        within one parent - the same shape the manage screen builds from,
+        so a client walks parent_id itself rather than asking twice.
+      parameters:
+        - name: library_id
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Location" } }
+        "403": { description: That library is not one you may read }
+    post:
+      tags: [Locations]
+      summary: Add a place
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                parent_id: { type: integer, nullable: true }
+                floor_level: { type: integer, nullable: true, description: "-9 to 99; anything outside that range is stored as unset rather than refused." }
+                notes: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Location" }
+        "422": { description: A duplicate name at the same level, or a parent in another library }
+        "403": { description: That library is not yours to arrange }
+
+  /locations/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Locations]
+      summary: Rename, move, or re-describe a place
+      description: >-
+        A key you omit keeps its current value, the same reasoning as
+        /titles/{id} - the model functions behind this (loop prevention,
+        the same-name-same-parent check) always revalidate the full row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                parent_id: { type: integer, nullable: true }
+                floor_level: { type: integer, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Location" }
+        "422": { description: A loop, a duplicate name, or a parent in another library }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Locations]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "422": { description: A loop, a duplicate name, or a parent in another library }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Locations]
+      summary: Remove a place
+      description: >-
+        Refused while anything is filed here or in anything beneath it -
+        the foreign key would silently set the affected items' location to
+        null, which is a quiet way to lose the answer to "where is my A500."
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Something is still filed here or in its subtree }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /categories:
+    get:
+      tags: [Taxonomy]
+      summary: The filing tree, filtered
+      description: >-
+        The tree is thousands of rows - one per kind per machine - so a
+        client asking a specific question is answered directly rather
+        than fetching everything and sorting it out itself.
+      parameters:
+        - name: library_id
+          in: query
+          schema: { type: integer }
+          description: >-
+            One library's own tree. Without it, every tree the account can read
+            comes back - which is right for a picker that has not been told which
+            shelf it is filling, and wrong for anything that has. `non_empty` is
+            scoped to the same library, so an empty shelf offers nothing rather
+            than the branches of whichever other shelf happens to hold something.
+        - name: domain
+          in: query
+          schema: { type: string, enum: [hardware, software, video, audio] }
+        - name: parent_id
+          in: query
+          description: The children of one node - a genre list, among other things.
+          schema: { type: integer }
+        - name: platform_id
+          in: query
+          description: One machine's own branches.
+          schema: { type: integer }
+        - name: non_empty
+          in: query
+          description: >-
+            Any value: keep only branches that hold something, counting anything
+            filed at or beneath them. Combine with `platform_id` to ask it of one
+            machine. Off by default - a picker for *filing* an entry needs the
+            empty branches most of all, and this is for the other kind of picker,
+            where an empty branch is an option that can only return nothing.
+          schema: { type: string }
+        - name: role
+          in: query
+          description: >-
+            Matched against the effective role, not just what a row
+            happens to say on its own - most leaves declare nothing and
+            inherit from a branch above, the same walk item_kind_
+            label() already does to decide what an entry itself is.
+          schema:
+            type: string
+            enum: [machine, peripheral, game, application, movie, tv_show, music, other]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a branch to the filing tree
+      description: >-
+        Curator-or-better on the branch's own library, matched to
+        require_tree_access() exactly. A root is a machine's own branch,
+        made by /platforms when the machine itself is created - refused
+        here rather than silently accepted with no machine behind it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parent_id, name]
+              properties:
+                parent_id: { type: integer }
+                name: { type: string }
+                platform_id:
+                  type: integer
+                  nullable: true
+                  description: Only for a kind that belongs to one specific machine. Omitted, it applies everywhere.
+                sort_order: { type: integer }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Category" }
+        "422": { description: A missing name, or a missing/unknown parent }
+        "403": { description: Curator access on this library is required }
+
+  /categories/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Rename a branch, or change its kind
+      description: >-
+        Name-only by default. Include `role` to also switch the branch's
+        kind and cascade the matching section across its entire subtree -
+        the same role/section-switch the web form's rename performs. A
+        root has no kind, whatever the request says. `other` says nothing
+        about which side of the shop a branch is on, so the section is
+        left as it was.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                sort_order: { type: integer }
+                role:
+                  type: string
+                  enum: [other, machine, peripheral, game, application, movie, tv_show, music]
+                  description: >-
+                    machine/peripheral cascade to the hardware section,
+                    game/application to software, movie/tv_show to video,
+                    music to audio - other leaves the section as it is.
+                    Refused on a root.
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name, an unreal kind, or a kind on a root }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a branch
+      description: >-
+        Three real guards, in order: a root, or the library's last
+        software-filing branch, refuses outright; a branch still holding
+        entries refuses; a branch hardware models are still classified
+        under refuses, since that foreign key would otherwise silently
+        orphan them.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Protected, still holds entries, or still classifies hardware models }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/users/{id}/avatar/approve:
+    post:
+      tags: [Account]
+      summary: Accept a profile picture that is waiting
+      description: >-
+        The waiting picture becomes the account's avatar and the old one's files
+        are removed. Administrators only. An administrator's own picture never
+        reaches this queue - they are exempt from the switch - so there is no
+        case of approving your own.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The account, with the new avatar }
+        "422": { description: That account has no picture waiting }
+
+  /admin/users/{id}/avatar/reject:
+    post:
+      tags: [Account]
+      summary: Refuse a profile picture that is waiting
+      description: >-
+        The waiting picture and its files are deleted; the one already in use is
+        untouched. There is no rejected state - a refused picture left on disk is
+        one somebody can still reach by guessing a URL.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The account, unchanged apart from the queue }
+        "422": { description: That account has no picture waiting }
+
+  /libraries/{id}/pending-images:
+    get:
+      tags: [Images]
+      summary: Photographs waiting for approval in one library
+      description: >-
+        Curator-or-better on the library. These are pictures deliberately not
+        shown to everybody, so the list of them is the same secret as the
+        pictures. Empty on a library that has never switched approval on.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Images, each with its entry and who uploaded it }
+        "403": { description: Curator access on this library is required }
+
+  /images/{id}/approve:
+    post:
+      tags: [Images]
+      summary: Accept a photograph that is waiting
+      description: >-
+        The library is read from the picture rather than taken from the caller,
+        so no request can approve a picture into a library it is not in. The
+        entry's cover is recomputed afterwards, since this may be the only
+        picture it has.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The image, now approved }
+        "422": { description: That photo is not waiting for a decision }
+        "403": { description: Curator access on its library is required }
+
+  /images/{id}/reject:
+    post:
+      tags: [Images]
+      summary: Refuse a photograph that is waiting
+      description: >-
+        The row and its files both go, through the same delete every other
+        removal uses. No rejected state: a refused picture kept on disk is still
+        reachable by URL, and a kept row is a queue that only ever grows.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: id and deleted:true }
+        "422": { description: That photo is not waiting for a decision }
+        "403": { description: Curator access on its library is required }
+
+  /companies/{id}/logo:
+    post:
+      tags: [Taxonomy]
+      summary: Give a company a logo
+      description: >-
+        Multipart, in a field named `logo`. Replaces any previous one and removes
+        its files. Same gate as editing the company itself - a logo is a property
+        of the company, not a separate kind of thing with a looser rule.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The company, with its new logo }
+        "422": { description: Nothing arrived, or the file was not a usable image }
+        "403": { description: Curator access on its library is required }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a company's logo
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The company, with no logo }
+        "403": { description: Curator access on its library is required }
+
+  /admin/auth-methods/inspect:
+    post:
+      tags: [Admin]
+      summary: Can this person sign in, and as what?
+      description: >-
+        Answers the question an administrator actually asks when somebody cannot
+        get in, without making them try. Takes the same shape as the test beside
+        it - a saved directory by `id`, or whatever is on an unsaved form in
+        `params`, or both merged - so a directory can be interrogated before it
+        is saved.
+
+
+        `found` and `allowed` are reported separately, and the difference is the
+        point: an entry the search cannot see is a base DN or a filter problem,
+        and one it finds but refuses is a group membership problem. Always 200 -
+        "not found" and "found but refused" are successful lookups reporting bad
+        news, and a 404 there would make a client show a broken-request error for
+        a working request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier]
+              properties:
+                identifier: { type: string, description: "Username, email, DOMAIN\\user or user@domain." }
+                id:         { type: integer, description: A saved directory to use. }
+                type:       { type: string, enum: [ldap, ad] }
+                params:     { type: object, description: Overrides, for testing an unsaved form. }
+      responses:
+        "200": { description: found, allowed, dn, username, name, email, groups, role, access, reason }
+        "422": { description: No identifier sent }
+
+  /libraries/{id}/invitable:
+    get:
+      tags: [Libraries]
+      summary: Accounts that could be invited here, matching a search
+      description: >-
+        A search, deliberately not a list. Anybody who administers one library
+        would otherwise be handed every account on the instance, which is a
+        membership directory nobody asked them to have. A query of at least two
+        characters is required - shorter answers with an empty list rather than a
+        422, because an empty box is the ordinary state of a search - and the
+        result is capped at twenty.
+
+
+        Returns only what an invitation needs: the id to send and a name to
+        recognise. No email, no role, no last-seen. Inactive accounts, the
+        caller, and anybody already a member or already invited are left out -
+        offering them is offering an action that would be refused.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: q, in: query, schema: { type: string, minLength: 2 } }
+      responses:
+        "200": { description: id, name, username }
+        "403": { description: Administering this library is required - the same gate the invitation has }
+
+  /auth/verify:
+    post:
+      tags: [Auth]
+      summary: Redeem an email confirmation link
+      description: >-
+        Unauthenticated on purpose: the situation this exists for is somebody who
+        cannot sign in *because* their address is unconfirmed, and requiring a
+        token to fix the thing stopping you getting one is a closed loop.
+        `verify/resend` beside it gave a way to ask for another link and no way
+        to use one.
+
+
+        The same answer whether the token is wrong, already used, or never
+        existed - telling them apart tells somebody holding a guessed token which
+        guesses are close.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { description: Confirmed }
+        "422": { description: Not a usable link }
+
+  /libraries/{id}/ownership/offer:
+    post:
+      tags: [Libraries]
+      summary: Offer a library to one of its members
+      description: >-
+        Owner only, and never for a personal shelf - that one belongs to the
+        account it was made with. The recipient must be a member who has
+        *accepted*: somebody who has not joined has not agreed to be in the
+        library at all, and offering them the whole thing skips a step.
+
+
+        Nothing changes hands. The library stays the owner's until the offer is
+        accepted, which is what makes this an offer rather than a transfer, and
+        `ownership/withdraw` takes it back until then.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer }
+      responses:
+        "200": { description: Offered }
+        "403": { description: Only the owner may hand a library over }
+        "422": { description: A personal shelf, or somebody who has not joined }
+
+  /admin/logs/prune:
+    post:
+      tags: [Admin]
+      summary: Remove entries older than the retention setting
+      description: >-
+        The rule is not a parameter. Retention is an instance setting, and
+        letting a request name its own cutoff would put "delete the whole log"
+        one request away from anybody who can read it. Refused with 422 when
+        retention is set to keep everything, rather than succeeding and removing
+        nothing. `GET /admin/logs` reports `prunable` and `retention_days` so a
+        client can label the button with what it will actually do.
+      responses:
+        "200": { description: removed, retention_days }
+        "422": { description: Retention is set to keep everything }
+
+  /admin/logo/{which}:
+    post:
+      tags: [Admin]
+      summary: Replace one of the instance's own logos
+      description: >-
+        Multipart, in a field named `logo`. `which` is `small` for the mark
+        beside the menu or `large` for the one above the sign-in form - two
+        pictures rather than one scaled twice, because a mark that reads at 24
+        pixels is rarely the same drawing as one that carries a sign-in page.
+
+
+        Both are reported by `GET /meta`, not from behind an admin gate: a client
+        needs the large one before anybody has signed in, which is the whole
+        point of it. Null there means "draw the built-in mark".
+      parameters:
+        - { name: which, in: path, required: true, schema: { type: string, enum: [small, large] } }
+      responses:
+        "200": { description: Both logo URLs }
+        "422": { description: Nothing arrived, or the file was not a usable image }
+    delete:
+      tags: [Admin]
+      summary: Remove one, restoring the built-in mark
+      parameters:
+        - { name: which, in: path, required: true, schema: { type: string, enum: [small, large] } }
+      responses:
+        "200": { description: Both logo URLs }
+
+  /admin/mail:
+    get:
+      tags: [Account]
+      summary: Whether mail has been proved to arrive
+      description: >-
+        Saving relay settings proves nothing - a relay will accept a message and
+        drop it. The only evidence is somebody holding a code that was sent to
+        them. `code_pending` is false once the relay settings change, because a
+        code is only redeemable against the settings it was sent under.
+      responses:
+        "200":
+          description: enabled, verified, verified_at, code_to, code_pending, code_expires_in
+
+  /admin/mail/send-code:
+    post:
+      tags: [Account]
+      summary: Send a confirmation code to an address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, format: email }
+      responses:
+        "200": { description: Sent }
+        "422":
+          description: >-
+            A bad address, or the relay refused it. The message names the actual
+            failure - a sender the server will not accept, a host that does not
+            answer - which is more use than a generic error.
+
+  /admin/mail/confirm-code:
+    post:
+      tags: [Account]
+      summary: Redeem the code from that email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: "123456" }
+      responses:
+        "200": { description: Confirmed }
+        "422": { description: Wrong, expired, or sent under different relay settings }
+
+  /prefs:
+    get:
+      tags: [Account]
+      summary: This account's small preferences
+      description: >-
+        Which view each browser section opens in, and whatever else is worth
+        remembering per person and is nobody else's business. Flat string pairs.
+        Only ever this account's - there is no reading another's.
+      responses:
+        "200":
+          description: An object of name/value pairs, empty for a new account
+    patch:
+      tags: [Account]
+      summary: Set or forget preferences
+      description: >-
+        Merged, not replaced. A client setting one preference must not clear the
+        ones it has never heard of, which is what a whole-object PUT would do the
+        first time two clients disagree about the list. Send null or an empty
+        string to forget a key - a preference put back to its default should
+        leave no row rather than one repeating the default. Names over 60
+        characters are refused rather than trimmed, since trimming would make two
+        keys collide silently; anything refused comes back in meta.rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: [string, "null"]
+              example: { "view:hardware": "table", "view:video": null }
+      responses:
+        "200": { description: The full set after the change }
+        "422": { description: An empty body }
+
+  /stock-images:
+    get:
+      tags: [Taxonomy]
+      summary: The generic pictures that ship with the package
+      description: >-
+        Blank mock-ups of packaging - a big box, a jewel case, a VHS slip, a
+        record sleeve - plus one apiece for a computer and an expansion card.
+        An entry with no photograph of its own and no
+        picture on its branch already falls back to whichever of these matches
+        what it is and what it comes on; this endpoint exists so a client can
+        also offer them as something to set deliberately on a branch. Readable
+        by anyone signed in - the same files on every install.
+      responses:
+        "200":
+          description: The catalogue, plus whether the instance has them switched on
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        slug: { type: string }
+                        label: { type: string }
+                        note: { type: string }
+                        thumb: { type: string, format: uri }
+                        display: { type: string, format: uri }
+                  meta:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+
+  /categories/{id}/image:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Taxonomy]
+      summary: What this branch's own entries look like with no photograph of their own
+      description: >-
+        A generic case for the format - a VHS clamshell, a boxed Amiga
+        disk - shown on an entry filed in this branch only when that
+        entry genuinely has no photograph of its own, real or brought in
+        by a metadata agent. Inherited down the branch: a leaf with
+        none of its own uses the nearest ancestor that has one, the
+        same walk category_effective_role() already does for kind.
+        Curator-level, the same permission the tree's other structural
+        edits already need.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, format: binary }
+          application/json:
+            schema:
+              type: object
+              required: [stock]
+              properties:
+                stock:
+                  type: string
+                  description: >-
+                    Slug of one of the pictures that ship with the package, from
+                    GET /stock-images, instead of uploading a file. Stored as a
+                    reference rather than a copy, so nothing is written to the
+                    uploads directory and removing it later deletes no file.
+      responses:
+        "200": { description: id and image (thumb, display) }
+        "422": { description: Neither a file nor a known stock slug arrived }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove this branch's own picture
+      description: >-
+        Only ever removes this node's own upload. A leaf inheriting one
+        from an ancestor still shows it afterward - inheritance is a
+        property of the branch, not a copy stored on every node beneath
+        it, so there is nothing on a leaf to remove in the first place.
+      responses:
+        "204": { description: Removed - or there was nothing on this node to remove }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /categories/{id}/move:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Taxonomy]
+      summary: Reparent a branch
+      description: >-
+        A node cannot move inside itself or its own descendants. The whole
+        subtree's section follows the new parent's, since there is no
+        sense in which the children stayed on the old side of the shop
+        while their parent moved to the new one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parent_id]
+              properties: { parent_id: { type: integer } }
+      responses:
+        "200": { description: Moved }
+        "422": { description: A loop, or a parent in another library }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /directory:
+    get:
+      tags: [Admin]
+      summary: Every active account, by name
+      description: >-
+        id, username, display_name only - enough to fill a picker (who to
+        invite, who to grant ownership to) without handing every caller
+        the full account list an administrator's own user management
+        screen shows.
+      responses:
+        "200": { description: OK }
+        "403": { description: Sign in first }
+
+  /companies:
+    get:
+      tags: [Taxonomy]
+      summary: Developers and publishers
+      parameters:
+        - name: library_id
+          in: query
+          schema: { type: integer }
+          description: >-
+            One library's companies. Companies became per-library when vendors
+            and companies were merged; without this the engine falls back to its
+            own session's working library, which an API client cannot set - so it
+            answered with whatever the server happened to think was current, and
+            with nothing when it thought none was.
+        - name: makes
+          in: query
+          schema: { type: string, enum: [hardware, software] }
+          description: >-
+            One side of the shop. A developer picker wants software makers, a
+            manufacturer picker the hardware ones, and a firm that does both is
+            correctly in each. Applies to the `q` search too, or typing a name
+            would reach past the shelf the rest of the screen is confined to.
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a company
+      description: >-
+        Curator-or-better on the library it belongs to, not just anyone who
+        can write - the same require_manage() gate the web screen already
+        applies, since a company is shared reference data every entry in a
+        library points at, not one person's own addition.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                makes: { type: array, items: { type: string, enum: [hardware, software] } }
+                country: { type: string, nullable: true }
+                founded_year: { type: integer, nullable: true }
+                defunct_year: { type: integer, nullable: true }
+                website: { type: string, nullable: true }
+                wikipedia_url: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a URL that is not a full https:// address }
+        "403": { description: Curator access on this library is required }
+
+  /companies/{id}:
+    get:
+      tags: [Taxonomy]
+      summary: One company plus what they developed and published
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Taxonomy]
+      summary: Update a company
+      description: A key you omit keeps its current value, the same contract as /titles/{id}.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                makes: { type: array, items: { type: string, enum: [hardware, software] } }
+                country: { type: string, nullable: true }
+                founded_year: { type: integer, nullable: true }
+                defunct_year: { type: integer, nullable: true }
+                website: { type: string, nullable: true }
+                wikipedia_url: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name, or a URL that is not a full https:// address }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name, or a URL that is not a full https:// address }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a company
+      description: >-
+        Refused while a live catalogue entry still names this as developer
+        or publisher; the message says whether that entry is active or only
+        in the trash, since a deleted row keeps its foreign keys.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+        "422": { description: A live or trashed entry still points at this }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /people:
+    get:
+      tags: [Taxonomy]
+      summary: Directors, artists, authors - people, not companies
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a person
+      description: Curator-or-better on the library, the same bar companies already sets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                born_year: { type: integer, nullable: true }
+                died_year: { type: integer, nullable: true }
+                website: { type: string, nullable: true }
+                wikipedia_url: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name or an invalid URL }
+        "403": { description: Curator access on this library is required }
+
+  /people/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update a person
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name or an invalid URL }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a person
+      description: Refused while any credit still names them.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still credited on a title }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /credit-roles:
+    get:
+      tags: [Taxonomy]
+      summary: Director, Composer - what a credit can be
+      description: >-
+        Pass `domain` to narrow to roles that apply there - what a title's
+        own credits picker should actually use, so adding a movie is never
+        offered Composer.
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: domain, in: query, schema: { type: string, enum: [hardware, software, video, music] } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a credit role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name, domains]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                domains:
+                  type: array
+                  items: { type: string, enum: [hardware, software, video, music] }
+                sort_order: { type: integer }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name or no domains chosen }
+        "403": { description: Curator access on this library is required }
+
+  /credit-roles/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update a credit role
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a credit role
+      description: Refused while any credit still uses it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still used on a credit }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /credits:
+    get:
+      tags: [Taxonomy]
+      summary: Who did what on a title
+      parameters:
+        - { name: title_id, in: query, required: true, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Credit a person or a company for a role on a title
+      description: >-
+        Exactly one of person_id or company_id - the same rule the database's
+        own CHECK constraint enforces regardless of what this layer does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title_id, role_id]
+              properties:
+                title_id: { type: integer }
+                role_id: { type: integer }
+                person_id: { type: integer, nullable: true }
+                company_id: { type: integer, nullable: true }
+                sort_order: { type: integer }
+      responses:
+        "201": { description: Created }
+        "422": { description: Both or neither of person_id/company_id, or a reference outside this library }
+        "403": { description: Curator access on this library is required }
+
+  /credits/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a credit
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /hardware-models:
+    get:
+      tags: [Taxonomy]
+      summary: Machines and the parts that go in them
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: role, in: query, schema: { type: string, enum: [machine, peripheral] } }
+        - { name: platform_id, in: query, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a hardware model
+      description: >-
+        Owner-level on the library, stricter than the curator bar most of
+        this taxonomy family uses - matched to the real web screen's own
+        gate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, category_id, name]
+              properties:
+                library_id: { type: integer }
+                category_id: { type: integer, description: Must have role machine or peripheral. }
+                platform_id: { type: integer, nullable: true }
+                vendor_id: { type: integer, nullable: true }
+                name: { type: string }
+                year_from: { type: integer, nullable: true }
+                fits_note: { type: string, nullable: true }
+                interface: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a category/platform/vendor outside this library or the wrong role }
+        "403": { description: Owner access on this library is required }
+
+  /hardware-models/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Taxonomy]
+      summary: One hardware model
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Taxonomy]
+      summary: Update a hardware model
+      responses:
+        "200": { description: Updated }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a hardware model
+      description: Refused while any catalogue entry still points at it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still used by a catalogue entry }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /software-models:
+    get:
+      tags: [Taxonomy]
+      summary: Boxed-release templates - what a title made from one starts already filled in with
+      description: >-
+        Carries field_count, content_count and media_count per row, but not the
+        lists themselves - three child queries per row would be a hundred and
+        twenty of them for a table of forty. Fetch one model to get its lists.
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: platform_id, in: query, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a software model
+      description: Owner-level on the library, matching hardware models.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [library_id, name]
+                  properties:
+                    library_id: { type: integer }
+                    platform_id: { type: integer, nullable: true }
+                    category_id: { type: integer, nullable: true }
+                    name: { type: string }
+                    notes: { type: string, nullable: true }
+                - $ref: "#/components/schemas/SoftwareModelLists"
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a platform/category outside this library }
+        "403": { description: Owner access on this library is required }
+
+  /software-models/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Taxonomy]
+      summary: One software model
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Taxonomy]
+      summary: Update a software model
+      description: >-
+        A child list is rewritten wholesale when its key is present and left
+        entirely alone when it is absent. Absent and empty are different
+        instructions: send `"contents": []` to empty the list, and omit the key
+        to change only the name.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  properties:
+                    platform_id: { type: integer, nullable: true }
+                    category_id: { type: integer, nullable: true }
+                    name: { type: string }
+                    notes: { type: string, nullable: true }
+                - $ref: "#/components/schemas/SoftwareModelLists"
+      responses:
+        "200": { description: Updated }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a software model
+      description: >-
+        No usage guard, deliberately - a model is where an answer came
+        from, not where it lives, so a title made from one keeps
+        everything it was filled in with.
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/users/{id}/access:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Admin]
+      summary: One account's library access
+      description: >-
+        [libraryId => level] for whichever libraries this account has a
+        membership row in. A library absent from the map means no access.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Admin]
+      summary: Rewrite one account's library access wholesale
+      description: >-
+        A client for the real access page's own bulk-save rule, not a new
+        one: membership is the whole of access, so a library absent from
+        the submitted map has its membership removed. Owner is never
+        assignable here - it changes by being offered and accepted - and
+        a personal library keeps its owner's membership regardless.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access]
+              properties:
+                access:
+                  type: object
+                  description: libraryId => one of viewer, contributor, editor, curator, admin.
+      responses:
+        "200": { description: The account's access, after the rewrite }
+        "403": { description: Administrator access is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Admin]
+      summary: Same as PUT
+      responses: { "200": { description: The account's access, after the rewrite } }
+
+  /import:
+    post:
+      tags: [Items]
+      summary: Import a CSV of catalogue entries
+      description: >-
+        Dry run by default - nothing is written unless `commit=1`. A row
+        with an `ID` column updates that entry; a row without one creates.
+        Multipart form data, not JSON: the file itself plus `library_id`,
+        optional `commit` and `create_titles`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [library_id, csv]
+              properties:
+                library_id: { type: integer }
+                csv: { type: string, format: binary }
+                commit: { type: string, enum: ["0", "1"], description: Send "1" to actually write. }
+                create_titles: { type: string, enum: ["0", "1"] }
+      responses:
+        "200":
+          description: >-
+            The dry-run or commit report - counts, and any row-level
+            errors or warnings. `committed` says whether anything was
+            actually written this call.
+        "422": { description: No file, no library access, or the file itself is unreadable }
+        "403": { description: Write access on this library is required }
+
+  /environments:
+    get:
+      tags: [Taxonomy]
+      summary: What a release runs under - Workbench, DOS, a console's BIOS
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: platform_id, in: query, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add an environment
+      description: Curator-or-better on the library, the same bar companies and credit roles both set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, platform_id, name]
+              properties:
+                library_id: { type: integer }
+                platform_id: { type: integer }
+                name: { type: string }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a platform from another library }
+        "403": { description: Curator access on this library is required }
+
+  /environments/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update an environment
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove an environment
+      description: Refused while any entry still names it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still named by an entry }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /tags:
+    get:
+      tags: [Taxonomy]
+      summary: Tags
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a tag
+      description: >-
+        No library_id - tags are instance-wide. Requires curating at least
+        one library, the closest real equivalent of what the web screen's
+        require_manage() checks against whichever library happens to be
+        the session's current one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string } }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name }
+        "403": { description: Curator access on at least one library is required }
+
+  /tags/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Rename a tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string } }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name }
+        "403": { description: Curator access on at least one library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on at least one library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a tag
+      description: Refused while any item still carries it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: A catalogue entry still carries this tag }
+        "403": { description: Curator access on at least one library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /stats:
+    get:
+      tags: [Sync]
+      summary: Dashboard figures
+      responses: { "200": { description: OK } }
+
+  /sync:
+    get:
+      tags: [Sync]
+      summary: Delta sync for offline clients
+      description: |
+        Omit `since` for a full sync. Store the returned `server_time` and pass
+        it back next time to receive only changes and deletions.
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time }
+          example: "2026-07-25T09:30:00Z"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      server_time: { type: string, format: date-time }
+                      full_sync: { type: boolean }
+                      items: { type: array, items: { $ref: "#/components/schemas/Item" } }
+                      deleted:
+                        type: object
+                        properties:
+                          items: { type: array, items: { type: integer } }
+                          item_images: { type: array, items: { type: integer } }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: rvt
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: Field-level problems, listed in details
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: validation_failed }
+            message: { type: string }
+            details: { type: object, additionalProperties: { type: string } }
+
+    EnumOption:
+      type: object
+      properties:
+        value: { type: string }
+        label: { type: string }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        pages: { type: integer }
+        has_more: { type: boolean }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        display_name: { type: [string, "null"] }
+        role:
+          type: string
+          enum: [admin, user]
+          description: >-
+            Instance role only: may this account configure the system.
+            It does not decide catalogue access, which is per library below.
+            Changed; was [viewer, editor, admin].
+        can_edit:
+          type: boolean
+          description: True when the account can write to at least one library.
+        is_admin: { type: boolean }
+        libraries:
+          type: array
+          description: Libraries this account can read, each with its access level.
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              slug: { type: string }
+              color: { type: string, example: "#cba6f7" }
+              access: { $ref: "#/components/schemas/LibraryAccess" }
+        platforms:
+          type: array
+          description: >-
+            Every platform on the instance. A platform is the machine an entry
+            runs on and is not an access boundary, so no access field is
+            reported here.
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              slug: { type: string }
+
+    Category:
+      type: object
+      description: >-
+        A branch in the filing tree - a root is a machine, everything
+        beneath it is a kind of thing that machine can hold. `path` is a
+        breadcrumb built fresh on every read, not stored; `domain` and
+        `role` say which side of the shop a branch is on and whether it is
+        a machine/peripheral kind specifically.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        parent_id: { type: [integer, "null"] }
+        domain: { type: [string, "null"], enum: [hardware, software, video, music, null] }
+        role: { type: [string, "null"] }
+        depth: { type: integer }
+        platform_id:
+          type: [integer, "null"]
+          description: Set only for a kind that belongs to one specific machine.
+        library_id: { type: [integer, "null"] }
+        own_image:
+          type: [object, "null"]
+          description: >-
+            Only ever a file uploaded onto this row, never inherited. A client
+            offering "remove" needs to know whether there is genuinely something
+            here to remove.
+        effective_image:
+          type: [object, "null"]
+          description: >-
+            What an entry filed here would actually show with no photograph of
+            its own, resolved in the same four steps item_to_api() takes.
+            `source` says which answered - `own` (uploaded here), `inherited`
+            (from a branch above), `branch` (a shipped picture this branch
+            declares), or `kind` (the shipped picture for this kind, which an
+            entry stating a format may improve on).
+          properties:
+            thumb:   { type: string, format: uri }
+            display: { type: string, format: uri }
+            source:  { type: string, enum: [own, inherited, branch, kind] }
+        stock_image:
+          type: [string, "null"]
+          description: The shipped picture this branch declares, by slug. Null when it declares none.
+        path: { type: string, example: "Amiga › Software › Games › Action" }
+        description: { type: [string, "null"] }
+        sort_order: { type: integer }
+
+    Location:
+      type: object
+      description: >-
+        A room, a cabinet, a shelf - a tree of any depth, per library.
+        `path` and `depth` are materialised, not computed on read, so a
+        client can select a subtree without recursing itself.
+      properties:
+        id: { type: integer }
+        library_id: { type: integer }
+        parent_id: { type: [integer, "null"] }
+        name: { type: string }
+        path: { type: string }
+        depth: { type: integer }
+        floor_level:
+          type: [integer, "null"]
+          description: Signed, -9 to 99. 0 is the level you walk in on.
+        notes: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+
+    Title:
+      type: object
+      description: >-
+        The software itself, recorded once, as against your copy of it. The
+        counterpart to a hardware model. Two copies of one game are two items
+        pointing at one title; they differ in condition and completeness, which
+        is exactly what makes them two entries rather than a duplicate.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        subtitle: { type: [string, "null"] }
+        sort_name: { type: [string, "null"] }
+        slug: { type: string }
+        work_key:
+          type: string
+          description: >-
+            Shared across platforms, so the Amiga and C64 releases of one game
+            can be found together while staying separate records.
+        platform:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: [string, "null"] }
+            slug: { type: [string, "null"] }
+        category_id: { type: [integer, "null"] }
+        developer: { type: [string, "null"] }
+        publisher: { type: [string, "null"] }
+        release_year: { type: [integer, "null"] }
+        release_date: { type: [string, "null"], format: date }
+        language: { type: [string, "null"] }
+        region: { type: [string, "null"] }
+        external_url: { type: [string, "null"] }
+        synopsis: { type: [string, "null"] }
+        copy_count:
+          type: [integer, "null"]
+          description: How many entries point at this title.
+        created_at: { type: [string, "null"], format: date-time }
+        updated_at: { type: [string, "null"], format: date-time }
+
+    Condition:
+      type: string
+      enum: [unknown, mint, near_mint, very_good, good, fair, poor]
+
+    ComponentCondition:
+      type: string
+      description: Component grades add "missing", which an overall grade has no use for.
+      enum: [unknown, mint, near_mint, very_good, good, fair, poor, missing]
+
+    Status:
+      type: string
+      enum: [owned, wishlist, ordered, lent, sold]
+
+    LibraryAccess:
+      type: string
+      enum: [none, viewer, contributor, curator, owner]
+
+    Completeness:
+      type: string
+      enum: [unknown, cib, boxed_no_manual, loose, manual_only, digital]
+
+    ImageKind:
+      type: string
+      enum: [box_front, box_back, box_spine, media, manual, extras, screenshot, other]
+
+    Library:
+      type: object
+      description: >-
+        A shelf with members. This is the only access boundary in the system,
+        which is why it is the only one of the two that carries an access level.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: [string, "null"] }
+        color: { type: string, example: "#cba6f7" }
+        visibility:
+          type: string
+          enum: [private, shared]
+          description: A shared library is readable by anyone signed in - readable only.
+        is_personal:
+          type: boolean
+          description: >-
+            Created with the account and never deletable, so there is always
+            somewhere to put things.
+        sort_order: { type: integer }
+        item_count:
+          type: [integer, "null"]
+          description: Entries in this library that the caller can see.
+        access: { $ref: "#/components/schemas/LibraryAccess" }
+
+    Platform:
+      type: object
+      description: >-
+        The machine an entry runs on. Not an access boundary and deliberately
+        carries no access field - reporting one here was the serialiser end of
+        the bug that had the API authorising against platform_id.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        manufacturer: { type: [string, "null"] }
+        year_introduced: { type: [integer, "null"] }
+        color: { type: string, example: "#cba6f7" }
+        description: { type: [string, "null"] }
+        sort_order: { type: integer }
+        item_count:
+          type: [integer, "null"]
+          description: Entries on this platform that the caller can see.
+
+    Ref:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+
+    ComponentGrade:
+      type: object
+      properties:
+        value: { $ref: "#/components/schemas/ComponentCondition" }
+        label: { type: string }
+
+    Image:
+      type: object
+      properties:
+        id: { type: integer }
+        item_id: { type: integer }
+        kind: { $ref: "#/components/schemas/ImageKind" }
+        kind_label: { type: string }
+        caption: { type: [string, "null"] }
+        is_primary: { type: boolean }
+        sort_order: { type: integer }
+        width: { type: [integer, "null"] }
+        height: { type: [integer, "null"] }
+        filesize: { type: [integer, "null"] }
+        urls:
+          type: object
+          properties:
+            thumb: { type: [string, "null"], format: uri }
+            display: { type: [string, "null"], format: uri }
+            original: { type: [string, "null"], format: uri }
+        created_at: { type: [string, "null"], format: date-time }
+
+    Item:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        subtitle: { type: [string, "null"] }
+        sort_title: { type: [string, "null"] }
+        library: { $ref: "#/components/schemas/Library" }
+        category: { $ref: "#/components/schemas/Ref" }
+        kind:
+          type: string
+          description: >-
+            game, software (meaning application), machine, peripheral,
+            movie, tv_show, or music - the category's own declared or
+            inherited role. Empty string when nothing above the leaf
+            has ever said.
+        kind_label: { type: string, description: "kind, in a form fit to show - capitalised for a single word, \"TV show\" (not the literal \"Tv_show\") for the one kind that isn't one - what a table column header shows." }
+        genre: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
+        developer: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
+        publisher: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
+        release_year: { type: [integer, "null"] }
+        release_date: { type: [string, "null"], format: date }
+        rating: { type: [integer, "null"], minimum: 1, maximum: 10 }
+        condition: { $ref: "#/components/schemas/Condition" }
+        condition_label: { type: string }
+        components:
+          type: object
+          properties:
+            box:    { $ref: "#/components/schemas/ComponentGrade" }
+            manual: { $ref: "#/components/schemas/ComponentGrade" }
+            media:  { $ref: "#/components/schemas/ComponentGrade" }
+        completeness: { $ref: "#/components/schemas/Completeness" }
+        completeness_label: { type: string }
+        media_type: { type: [string, "null"] }
+        media_count: { type: integer }
+        catalog_number: { type: [string, "null"] }
+        barcode: { type: [string, "null"] }
+        language: { type: [string, "null"] }
+        region: { type: [string, "null"] }
+        acquired_on: { type: [string, "null"], format: date }
+        acquired_price: { type: [number, "null"] }
+        currency: { type: string }
+        storage_location: { type: [string, "null"] }
+        is_original: { type: boolean }
+        status: { $ref: "#/components/schemas/Status" }
+        status_label: { type: string }
+        is_wishlist: { type: boolean, description: Derived from status }
+        copies: { type: integer }
+        sold_on: { type: [string, "null"], format: date }
+        sold_price: { type: [number, "null"] }
+        current_value: { type: [number, "null"] }
+        valued_on: { type: [string, "null"], format: date }
+        can_edit: { type: boolean, description: Whether the caller may change this entry }
+        external_url: { type: [string, "null"], format: uri }
+        notes: { type: [string, "null"] }
+        image_count: { type: integer }
+        cover:
+          type: object
+          description: |
+            What to show for this entry, resolved in three steps: a real
+            photograph, then the picture set on the branch it is filed under
+            (inherited from the nearest ancestor that has one), then a generic
+            picture of the format that ships with the package. A stock picture
+            is never shown ahead of a real one.
+          properties:
+            thumb: { type: [string, "null"], format: uri }
+            display: { type: [string, "null"], format: uri }
+            is_default:
+              type: boolean
+              description: >-
+                True whenever what is shown is not a photograph of this object.
+            source:
+              type: [string, "null"]
+              enum: [photo, category, stock, null]
+              description: >-
+                Which of the three steps answered. Null when there is nothing
+                to show at all. A client that only needs "is this real" can keep
+                reading is_default.
+        images: { type: array, items: { $ref: "#/components/schemas/Image" } }
+        tags: { type: array, items: { type: string } }
+        compatibility:
+          type: object
+          description: |
+            Which machine models this entry fits, and where that answer came
+            from. A peripheral's model wins over the card's own list - a copy of
+            a BigRAM 2008 cannot fit something a BigRAM 2008 does not - but the
+            card's own list is kept either way, so detaching the model does not
+            lose it. Enforced: a link into a machine is refused against this.
+          properties:
+            model_ids:
+              type: array
+              items: { type: integer }
+              description: The effective answer, whichever source it came from.
+            names: { type: array, items: { type: string } }
+            from:
+              type: string
+              enum: [model, item, none]
+            own_model_ids:
+              type: array
+              items: { type: integer }
+              description: >-
+                What this entry itself says, ignoring anything inherited. A
+                client drawing tick boxes wants this one - the boxes edit the
+                item's own list, and pre-ticking an inherited answer would make
+                clearing a box appear to do nothing.
+        environments:
+          type: array
+          description: What it runs under. Several, deliberately - a 1995 PC release often ran on MS-DOS and Windows 3.x both.
+          items:
+            type: object
+            properties:
+              id:   { type: integer }
+              name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        url: { type: string, format: uri }
+
+    ItemCompatibilityWrite:
+      type: object
+      description: |
+        Both lists are replaced wholesale when their key is present and left
+        entirely alone when it is absent, so an empty array clears and an
+        omitted key preserves. Ids that do not name a machine model, or an
+        environment, belonging to the entry's own library are dropped rather
+        than refused - the only way to send one is a stale form or a crafted
+        request, and neither wants an error page.
+      properties:
+        compatibility:
+          type: array
+          items: { type: integer }
+          description: Hardware model ids. Must be machines, in the same library as the entry.
+        environments:
+          type: array
+          items: { type: integer }
+          description: Environment ids, from this library's own operating_systems.
+
+    ImageProvenance:
+      type: string
+      enum: [official, personal]
+      default: personal
+      description: |
+        Where a picture came from, which is a different axis from `kind`. The
+        publisher's artwork - scans of the box, or anything a metadata agent
+        fetched - is `official`; a photograph of somebody's own copy is
+        `personal`. On upload anything that is not exactly `official` is treated
+        as `personal`, because mistaking a snapshot for the publisher's artwork
+        misrepresents it while the reverse merely under-claims.
+
+    HardwareModelFields:
+      type: object
+      description: |
+        The specification fields a hardware model states - what a machine or part
+        made from it is asked, with an answer filled in where the model knows
+        one. Replaced wholesale when the key is present, left alone when absent.
+        A row with a blank label is dropped rather than refused.
+
+        An entry seeds its own rows from these and they stay editable there: what
+        the model *is* cannot differ per copy, but what a copy *has* very much
+        can - a particular Amiga 2000 may have had its memory changed.
+      properties:
+        fields:
+          type: array
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:         { type: string, maxLength: 60 }
+              default_value: { type: [string, "null"], maxLength: 200 }
+              hint:          { type: [string, "null"], maxLength: 160 }
+
+    SoftwareModelLists:
+      type: object
+      description: |
+        A packaging model's three child lists. Each is optional; present means
+        "replace this list with exactly these rows", absent means "leave it".
+        A row with a blank label is dropped rather than refused, because the
+        forms that post these keep a spare row at the bottom to type into.
+      properties:
+        fields:
+          type: array
+          description: What a title made from this model is asked.
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:         { type: string, maxLength: 60 }
+              default_value: { type: [string, "null"], maxLength: 200 }
+              hint:          { type: [string, "null"], maxLength: 160 }
+        contents:
+          type: array
+          description: What the box should hold.
+          items:
+            type: object
+            required: [label]
+            properties:
+              label: { type: string, maxLength: 120 }
+              note:  { type: [string, "null"], maxLength: 255 }
+        media_list:
+          type: array
+          description: >-
+            What a release comes on, a row per medium. `medium` must be one of
+            the values in GET /meta's `media` groups; anything else is dropped
+            and named back in meta.media_ignored rather than refused, so one
+            unrecognised row does not lose the whole save.
+          items:
+            type: object
+            required: [medium]
+            properties:
+              medium:   { type: string }
+              quantity: { type: integer, minimum: 1, maximum: 999, default: 1 }
+
+    ItemWrite:
+      type: object
+      description: |
+        Required on create: title, platform_id, category_id. On PATCH every key
+        is optional and only what you send is changed. `compatibility` and
+        `environments` follow the same rule and are described in
+        ItemCompatibilityWrite.
+      properties:
+        compatibility:
+          type: array
+          items: { type: integer }
+          description: See ItemCompatibilityWrite - hardware model ids, replaced wholesale.
+        environments:
+          type: array
+          items: { type: integer }
+          description: See ItemCompatibilityWrite - environment ids, replaced wholesale.
+        title: { type: string, maxLength: 220 }
+        subtitle: { type: [string, "null"] }
+        sort_title: { type: [string, "null"] }
+        platform_id: { type: integer }
+        category_id: { type: integer }
+        developer_id: { type: [integer, "null"] }
+        developer_name: { type: [string, "null"], description: Created if unknown }
+        publisher_id: { type: [integer, "null"] }
+        publisher_name: { type: [string, "null"] }
+        release_year: { type: [integer, "null"], minimum: 1950 }
+        release_date: { type: [string, "null"], format: date }
+        rating: { type: [integer, "null"], minimum: 1, maximum: 10 }
+        condition: { $ref: "#/components/schemas/Condition" }
+        completeness: { $ref: "#/components/schemas/Completeness" }
+        media_type: { type: [string, "null"] }
+        media_count: { type: integer, minimum: 1 }
+        catalog_number: { type: [string, "null"] }
+        barcode: { type: [string, "null"] }
+        language: { type: [string, "null"] }
+        region: { type: [string, "null"] }
+        item_specs:
+          type: array
+          description: >-
+            The non-hardware counterpart to hardware's own specs -
+            a genre, a director, a running time, whatever this
+            particular domain calls its own. {label, value} rows,
+            same shape and same reasoning as hardware's own specs
+            field, written to the entry itself rather than a
+            hardware detail row. A distinct key on purpose: "specs"
+            already belongs to item_hardware, and an entry is never
+            both at once.
+          items:
+            type: object
+            properties:
+              label: { type: string, maxLength: 80 }
+              value: { type: string, maxLength: 400 }
+        acquired_on: { type: [string, "null"], format: date }
+        acquired_price: { type: [number, "null"] }
+        currency: { type: string, maxLength: 3 }
+        storage_location: { type: [string, "null"] }
+        is_original: { type: boolean }
+        status: { $ref: "#/components/schemas/Status" }
+        is_wishlist: { type: boolean, description: Legacy; mapped onto status }
+        copies: { type: integer, minimum: 1 }
+        sold_on: { type: [string, "null"], format: date }
+        sold_price: { type: [number, "null"] }
+        current_value: { type: [number, "null"] }
+        valued_on: { type: [string, "null"], format: date }
+        components:
+          type: object
+          description: Component grades; may also be sent flat as condition_box etc.
+          properties:
+            box:    { $ref: "#/components/schemas/ComponentCondition" }
+            manual: { $ref: "#/components/schemas/ComponentCondition" }
+            media:  { $ref: "#/components/schemas/ComponentCondition" }
+        external_url: { type: [string, "null"], format: uri }
+        notes: { type: [string, "null"] }
+        tags: { type: array, items: { type: string } }
