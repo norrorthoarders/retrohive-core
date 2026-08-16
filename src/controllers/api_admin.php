@@ -869,6 +869,24 @@ function api_users_update(int $id): void
         }
     }
 
+    // Confirming an address on somebody's behalf.
+    //
+    // Reported by this API as `email_verified` throughout and settable by
+    // nothing, which matters the moment "require a confirmed email address to
+    // sign in" is switched on: every account made before mail worked is locked
+    // out, and the way back needs a working relay - which is exactly what an
+    // instance in that state does not have.
+    //
+    // An administrator vouching for an address is a real answer to that, and the
+    // honest description of it: nobody has proved they can read it, somebody with
+    // the authority to say so has decided that is fine. Logged as a security
+    // event for the same reason.
+    if (array_key_exists('email_verified', $in)) {
+        $changes['email_verified_at'] = (bool) $in['email_verified']
+            ? ($user['email_verified_at'] ?? date('Y-m-d H:i:s'))
+            : null;
+    }
+
     if (array_key_exists('display_name', $in)) {
         $name = trim((string) $in['display_name']);
         if ($name === '') {
@@ -948,7 +966,16 @@ function api_users_update(int $id): void
     // What actually changed, in words rather than raw column names -
     // a credential is never named or shown, only that one was set.
     $changeWords = array_map(
-        static fn(string $k): string => $k === 'password_hash' ? 'password set' : $k,
+        static fn(string $k): string => match ($k) {
+            'password_hash'     => 'password set',
+            // Named for what it is. "email_verified_at" in a security log leaves
+            // the reader to work out whether somebody proved an address or
+            // somebody decided not to ask.
+            'email_verified_at' => ($changes['email_verified_at'] === null)
+                ? 'email confirmation withdrawn'
+                : 'email confirmed by an administrator',
+            default             => $k,
+        },
         array_keys($changes)
     );
     log_security('user.changed',
@@ -990,10 +1017,74 @@ function api_users_delete(int $id): void
         ), 403);
     }
 
+    // What happens to what they owned.
+    //
+    // `delete_row('users')` alone was the whole of this, and `libraries.owner_id`
+    // has no foreign key - so the row went and every library it owned kept
+    // pointing at an id that no longer existed. A personal shelf survived with
+    // its entries and photographs, owned by nobody, invisible to every screen
+    // that starts from an account. The confirmation in the web client already
+    // described the behaviour below, which made it a promise the engine did not
+    // keep.
+    //
+    // Two different fates, because they are two different things:
+    //
+    //   a personal shelf   exists because the account does, and goes with it.
+    //                      Nobody else can be given it - it was never shared,
+    //                      and keeping it would leave a library no screen can
+    //                      reach and no person can claim.
+    //
+    //   every other        is somebody's work, possibly several people's. The
+    //                      owner is cleared and the library is left standing for
+    //                      an administrator to hand on. Deleting a club's shelf
+    //                      because the person who happened to create it left
+    //                      would be destroying other people's entries to tidy up
+    //                      after one.
+    $personal = all('SELECT id, name FROM libraries WHERE owner_id = ? AND is_personal = 1', [$id]);
+    $shared   = all('SELECT id, name FROM libraries WHERE owner_id = ? AND is_personal = 0', [$id]);
+
+    $removed = [];
+    foreach ($personal as $lib) {
+        [$ok, $why] = library_purge((int) $lib['id'], true);
+        if (!$ok) {
+            // Reported rather than swallowed. A personal shelf that cannot be
+            // removed is the one case where stopping is better than continuing:
+            // deleting the account anyway is how the orphan this fixes was made.
+            api_error('conflict', sprintf(
+                'The account was not removed: its personal library could not be deleted (%s).', $why
+            ), 409);
+        }
+        $removed[] = (string) $lib['name'];
+    }
+
+    if ($shared !== []) {
+        q('UPDATE libraries SET owner_id = NULL WHERE owner_id = ? AND is_personal = 0', [$id]);
+    }
+    // An offer of ownership this account had been made dies with it, or the
+    // library keeps a pending owner nobody can accept as.
+    q('UPDATE libraries SET pending_owner_id = NULL, pending_owner_at = NULL
+        WHERE pending_owner_id = ?', [$id]);
+
     delete_row('users', $id);
     log_security('account.deleted', sprintf('Account "%s" removed', (string) $target['username']),
-                 LOG_WARNING, ['username' => (string) $target['username'], 'role' => (string) $target['role']]);
-    api_no_content();
+                 LOG_WARNING, [
+                     'username'  => (string) $target['username'],
+                     'role'      => (string) $target['role'],
+                     'purged'    => $removed,
+                     'orphaned'  => array_map(static fn(array $l): string => (string) $l['name'], $shared),
+                 ]);
+
+    api_ok([
+        'deleted'  => true,
+        'purged'   => $removed,
+        'orphaned' => array_map(static fn(array $l): array => [
+            'id'   => (int) $l['id'],
+            'name' => (string) $l['name'],
+        ], $shared),
+    ], ['message' => $shared === []
+        ? 'Account removed.'
+        : sprintf('Account removed. %d %s left without an owner for an administrator to reassign.',
+                  count($shared), count($shared) === 1 ? 'library' : 'libraries')]);
 }
 
 /**

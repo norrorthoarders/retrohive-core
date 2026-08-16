@@ -560,6 +560,18 @@ function item_to_api(array $r, bool $withImages = false): array
             'id'   => (int) $r['model_id'],
             'name' => $r['model_name'],
             'slug' => $r['model_slug'],
+            // What the model says this machine takes.
+            //
+            // A fact about the model rather than about this copy - every Amiga
+            // 2000 has five Zorro slots - which is why it is here and not on the
+            // hardware detail.
+            //
+            // Only with `$withImages`, which is the flag the detail endpoints
+            // pass and the list endpoint does not. It is really "the full
+            // article, not a row in a table": a query per entry is nothing on
+            // one machine and forty on a page of them, to draw something a list
+            // has no room for.
+            'slots' => $withImages ? model_slots((int) $r['model_id']) : [],
         ],
         'domain' => $r['domain'],
         'category' => [
@@ -1081,6 +1093,24 @@ function hardware_model_to_api(array $r): array
             'default_value' => $f['default_value'],
             'hint'          => $f['hint'],
         ], model_fields((int) $r['id'])),
+        // What a machine physically takes: five Zorro slots, two controller
+        // ports, one CPU socket.
+        //
+        // Seeded from hardware_machines.json since the beginning, read by
+        // model_slots(), and reported by nothing - so the Amiga 2000 in every
+        // installation has known about its five Zorro slots and its bridgeboard
+        // ISA slots the whole time, and no screen has ever said so.
+        //
+        // Empty for a part rather than absent. A graphics card has no slots of
+        // its own; it goes *in* one, which is `interface` above and a different
+        // question. A client should not have to tell "this has none" from "this
+        // was not asked".
+        'slots' => array_map(static fn(array $sl): array => [
+            'code'     => (string) $sl['code'],
+            'name'     => (string) $sl['name'],
+            'quantity' => (int) $sl['quantity'],
+            'notes'    => $sl['notes'],
+        ], model_slots((int) $r['id'])),
     ];
 }
 

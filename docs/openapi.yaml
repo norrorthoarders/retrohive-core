@@ -632,20 +632,52 @@ paths:
 
     delete:
       tags: [Admin]
-      summary: Remove an account outright
+      summary: Remove an account, and decide what happens to what it owned
       description: >-
         Refused for your own account, and for the last administrator who can
-        still sign in - either leaves the instance with no way back short of
-        the database itself.
+        still sign in - either leaves the instance with no way back short of the
+        database itself.
+
+
+        The account's **personal library is deleted with it**, entries, photos
+        and all. It exists because the account does, nobody else can be given it,
+        and keeping it leaves a library no screen can reach and no person can
+        claim.
+
+
+        **Every other library it owned is left standing with no owner**, for an
+        administrator to hand on from Instance Libraries. Those are somebody's
+        work, possibly several people's - deleting a club's shelf because the
+        person who created it left would be destroying other people's entries to
+        tidy up after one.
+
+
+        Any offer of ownership made *to* this account is cleared, or the library
+        keeps a pending owner nobody can accept as.
+
+
+        Answers 200 with what happened, not 204: `purged` names the libraries
+        deleted and `orphaned` the ones now waiting for an owner, so a client can
+        say so rather than reporting a bare success.
+
+
+        `email_verified` confirms an address on somebody's behalf, or withdraws
+        that. It matters when the instance requires a confirmed address to sign
+        in: every account made before mail worked is otherwise locked out, and
+        the way back needs a working relay - which is exactly what an instance in
+        that state does not have. Nobody has proved they can read the address;
+        somebody with the authority to say so has decided that is fine, and the
+        security log says which of the two happened.
       parameters:
         - name: id
           in: path
           required: true
           schema: { type: integer }
       responses:
-        "204": { description: Removed }
+        "200": { description: "deleted, purged[], orphaned[]" }
         "403": { description: Your own account, or the last administrator who can sign in }
         "404": { description: No account with that id }
+        "409": { description: The personal library could not be deleted, so the account was kept }
 
   /admin/libraries:
     get:

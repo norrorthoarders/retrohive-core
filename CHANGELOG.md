@@ -1,5 +1,97 @@
 # Changelog
 
+**`model_slots` is reported, after being seeded and read by nothing since the
+beginning.**
+
+It says what a machine physically takes: five Zorro slots, four ISA, one CPU
+slot. `hardware_machines.json` has carried it for all six shipped machines from
+the start, `structure.php` writes it on every sync, `model_slots()` reads it, and
+no endpoint has ever sent it. Every installation has known its Amiga 2000 has
+five Zorro slots and had no way to say so.
+
+On a hardware model, and on the model an entry is made from.
+
+**Empty rather than absent for a part.** A graphics card has no slots of its own
+- it goes *in* one, which is `interface` and a different question. A client
+should not have to tell "this has none" from "this was not asked".
+
+**Only with the full article.** The flag the detail endpoints pass and the list
+endpoint does not: a query per entry is nothing on one machine and forty on a
+page of them, to fetch something a list has no room for.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 143**.
+
+**An administrator can confirm an email address on somebody's behalf.**
+
+`email_verified` has been reported by this API throughout and settable by
+nothing. That matters the moment "require a confirmed email address to sign in"
+is switched on: every account made before mail worked is locked out, and the way
+back needs a working relay - which is exactly what an instance in that state does
+not have. The requirement creates a situation it cannot itself fix.
+
+`PATCH /admin/users/{id}` takes it now. Confirming an already-confirmed address
+keeps the original timestamp rather than moving it, because when it was confirmed
+is a fact and this is not a new one.
+
+Named in the security log for what it is: **"email confirmed by an
+administrator"** or **"email confirmation withdrawn"**, not `email_verified_at`.
+Nobody has proved they can read the address; somebody with the authority to say
+so has decided that is fine, and a log that leaves the reader to work out which
+of those happened is not much of a log.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 142**.
+
+**Removing an account did nothing about what it owned, while the web client's
+confirmation described exactly what it should have done.**
+
+`api_users_delete()` was `delete_row('users', $id)` and nothing else.
+`libraries.owner_id` has no foreign key, so the row went and every library it
+owned kept pointing at an id that no longer existed. A personal shelf survived
+with its entries and photographs, owned by nobody, invisible to every screen that
+starts from an account.
+
+The dialog in Instance Users already promised the behaviour below. A dialog that
+describes something the engine does not do is worse than a missing feature: it is
+believed.
+
+## Two fates, because they are two different things
+
+**A personal shelf is deleted with the account**, entries, photos and all. It
+exists because the account does, nobody else can be given it, and keeping it
+leaves a library no screen can reach and no person can claim.
+
+**Every other library it owned is left standing with no owner**, for an
+administrator to hand on. Those are somebody's work, possibly several people's.
+Deleting a club's shelf because the person who happened to create it left would
+be destroying other people's entries to tidy up after one.
+
+An offer of ownership made *to* the departing account is cleared too, or the
+library keeps a pending owner nobody can accept as.
+
+## What that needed
+
+`library_purge()` takes `$withOwner`. It refuses a personal shelf, correctly - it
+is not an administrator's to tidy away while its owner is still using the
+instance - and this is the one case where the owner is going too. The
+last-library guard is lifted with it: an instance whose only library is a
+departing account's personal shelf should end up with none, not keep a shelf
+nobody owns so that a count stays above zero.
+
+**A personal shelf that cannot be deleted stops the whole thing**, with a 409 and
+the account intact. Removing it anyway is how the orphan this fixes was made.
+
+The response is 200 with `purged` and `orphaned` rather than a bare 204, so a
+client can say how many libraries now need an owner instead of reporting success
+and leaving somebody to notice.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 141**.
+
 **The repository is `retrohive-core`.**
 
 The directory, the GitHub and GitLab remotes, and the four addresses the engine

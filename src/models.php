@@ -4842,17 +4842,27 @@ function library_upload_paths(int $libraryId): array
  *
  * @return array{0:bool,1:string,2:array<string,int>} ok, message, what was removed
  */
-function library_purge(int $libraryId): array
+function library_purge(int $libraryId, bool $withOwner = false): array
 {
     $lib = one('SELECT * FROM libraries WHERE id = ?', [$libraryId]);
     if ($lib === null) {
         return [false, 'No such library.', []];
     }
-    if ((int) ($lib['is_personal'] ?? 0) === 1) {
+    // A personal shelf belongs to its account, and goes when the account does.
+    //
+    // `$withOwner` is that one case: the account is being removed, so the shelf
+    // that exists because of it has nothing left to belong to. Every other
+    // caller leaves it alone, which is what the refusal below is for - a
+    // personal library is not an administrator's to tidy away while its owner
+    // is still using the instance.
+    if ((int) ($lib['is_personal'] ?? 0) === 1 && !$withOwner) {
         return [false, 'A personal shelf belongs to the account that owns it and is not '
                      . 'deleted from here.', []];
     }
-    if ((int) scalar('SELECT COUNT(*) FROM libraries') <= 1) {
+    // The last-library guard does not apply either. An instance whose only
+    // library is a departing account's personal shelf should end up with none,
+    // not keep a shelf nobody owns so that a count stays above zero.
+    if (!$withOwner && (int) scalar('SELECT COUNT(*) FROM libraries') <= 1) {
         return [false, 'That is the only library. Create another before deleting this one.', []];
     }
 
