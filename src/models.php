@@ -318,22 +318,6 @@ function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $
         WHERE have.id IS NULL',
       [$libraryId]);
 
-    // What a machine physically has. The vocabulary is per platform, so the slot
-    // has to be matched by code within this library's copy of the platform.
-    q('INSERT INTO model_slots (model_id, vocab_id, quantity, notes)
-       SELECT mine.id, mvocab.id, sl.quantity, sl.notes
-         FROM model_slots sl
-         JOIN hardware_models t    ON t.id = sl.model_id AND t.library_id IS NULL
-         JOIN hardware_models mine ON mine.library_id = ? AND mine.slug = t.slug
-         JOIN hardware_vocab tvocab ON tvocab.id = sl.vocab_id
-         JOIN platforms mp ON mp.id = mine.platform_id
-         JOIN hardware_vocab mvocab
-              ON mvocab.code = tvocab.code AND mvocab.kind = tvocab.kind
-             AND mvocab.platform_id = mp.id
-    LEFT JOIN model_slots have ON have.model_id = mine.id AND have.vocab_id = mvocab.id
-        WHERE have.id IS NULL',
-      [$libraryId]);
-
     // Both ends remapped, as above.
     q("INSERT IGNORE INTO model_compatibility (model_id, compatible_model_id)
        SELECT mineCard.id, mineMach.id
@@ -2682,6 +2666,17 @@ function seed_library_examples(int $libraryId): int
         // reads like a limit, and the second one is what shows that a machine
         // holds a list.
         ['zz9000',      'MNT ZZ9000',  'R-4'],
+
+        // The PC side, made from the models that ship for it.
+        //
+        // `pc-486`, `sound-blaster-16` and `voodoo2` were all seeded and nothing
+        // was ever made from them, so a fresh install showed one platform where
+        // models produce entries and another where they sit unused - which
+        // teaches that models are an Amiga thing rather than how the catalogue
+        // works.
+        ['pc-486',           'PC 486',            null],
+        ['sound-blaster-16', 'Sound Blaster 16',  null],
+        ['voodoo2',          '3dfx Voodoo2',      null],
     ] as [$slug, $title, $rev]) {
         // This library's own copy of the model, made by seed_library_hardware()
         // just above. It used to be the template row, which was right while models
@@ -2706,7 +2701,7 @@ function seed_library_examples(int $libraryId): int
         // they take their whereabouts from it rather than carrying one. One machine
         // gets a position and the other does not, because the field is optional and
         // an example where every row is filled in does not show that.
-        $onShelf  = in_array($slug, ['amiga-500', 'amiga-2000'], true);
+        $onShelf  = in_array($slug, ['amiga-500', 'amiga-2000', 'pc-486'], true);
         $position = $slug === 'amiga-2000' ? '1' : null;
 
         // Looked up rather than read from $places, which is a local of
@@ -2768,9 +2763,19 @@ function seed_library_examples(int $libraryId): int
     $made += seed_library_video_examples($libraryId);
     $made += seed_library_music_examples($libraryId);
 
-    $host = $created['amiga-2000'] ?? null;
-    if ($host !== null) {
-        foreach (['bigram-2008', 'zz9000'] as $cardSlug) {
+    // Each machine holds the cards made for it. Two hosts rather than one,
+    // because a single example reads as the way it is done rather than as one
+    // case of it - and the PC pair are the only thing showing that a machine on
+    // another platform works the same way.
+    foreach ([
+        'amiga-2000' => ['bigram-2008', 'zz9000'],
+        'pc-486'     => ['sound-blaster-16', 'voodoo2'],
+    ] as $hostSlug => $cardSlugs) {
+        $host = $created[$hostSlug] ?? null;
+        if ($host === null) {
+            continue;
+        }
+        foreach ($cardSlugs as $cardSlug) {
             $card = $created[$cardSlug] ?? null;
             if ($card === null || $card === $host) {
                 continue;
@@ -4014,17 +4019,6 @@ function set_model_compatibility(int $modelId, array $compatibleIds): void
 function model_fields(int $modelId): array
 {
     return all('SELECT * FROM model_fields WHERE model_id = ? ORDER BY sort_order, label', [$modelId]);
-}
-
-/** What a machine will take. */
-function model_slots(int $modelId): array
-{
-    return all(
-        'SELECT hv.code, hv.name, ms.quantity, ms.notes
-           FROM model_slots ms JOIN hardware_vocab hv ON hv.id = ms.vocab_id
-          WHERE ms.model_id = ? ORDER BY hv.sort_order, hv.name',
-        [$modelId]
-    );
 }
 
 /**

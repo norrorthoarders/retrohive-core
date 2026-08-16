@@ -6967,3 +6967,221 @@ function api_company_for_name(int $libraryId, string $name, string $makes = 'sof
 
     return $id;
 }
+
+// --- Slot types --------------------------------------------------------------
+//
+// The vocabulary a machine's slots are named from: ISA, PCI, Zorro, a cartridge
+// port. `hardware_vocab` has existed since the beginning with no API and no
+// screen, so the only way to add one was editing the structure file and
+// re-syncing - which is why the shipped data defines ISA twice, once for the
+// Amiga and once for the PC, rather than once for everybody.
+//
+// `platform_id = 0` is the sentinel for "applies anywhere", already honoured by
+// the copy-into-a-library query and never used by the seed data. A bus that
+// outlived the machines that carried it - ISA, PCI, AGP, PCIe - belongs there;
+// Zorro and a Mega Drive cartridge port belong to their machine.
+
+function slot_type_to_api(array $r): array
+{
+    return [
+        'id'          => (int) $r['id'],
+        'kind'        => (string) $r['kind'],
+        // 0 rather than null on the wire, because that is what the column holds
+        // and a client that sends null back would create a second row rather
+        // than updating this one.
+        'platform_id' => (int) $r['platform_id'],
+        'platform'    => ($r['platform_name'] ?? null) === null ? null : [
+            'id'   => (int) $r['platform_id'],
+            'name' => (string) $r['platform_name'],
+        ],
+        'code'        => (string) $r['code'],
+        'name'        => (string) $r['name'],
+        'sort_order'  => (int) $r['sort_order'],
+        // How many machines name it, so a screen can say what removing one
+        // would cost before anybody presses the button.
+        'used_by'     => (int) ($r['used_by'] ?? 0),
+    ];
+}
+
+function api_slot_types_index(): void
+{
+    api_require_auth();
+
+    // Universal first, then the platform's own - which is the order somebody
+    // picking one wants them in, since the universal buses are the common case.
+    $where  = '(hv.platform_id = 0';
+    $params = [];
+    if (isset($_GET['platform_id']) && (int) $_GET['platform_id'] > 0) {
+        $where   .= ' OR hv.platform_id = ?';
+        $params[] = (int) $_GET['platform_id'];
+    }
+    $where .= ')';
+
+    if (isset($_GET['kind']) && in_array((string) $_GET['kind'],
+        ['interface', 'feature', 'socket', 'formfactor'], true)) {
+        $where   .= ' AND hv.kind = ?';
+        $params[] = (string) $_GET['kind'];
+    }
+
+    $rows = all(
+        "SELECT hv.*, p.name AS platform_name,
+                (SELECT COUNT(*) FROM hardware_models hm
+                  WHERE hm.interface_vocab_id = hv.id) AS used_by
+           FROM hardware_vocab hv
+      LEFT JOIN platforms p ON p.id = hv.platform_id
+          WHERE $where
+       ORDER BY hv.platform_id = 0 DESC, p.name, hv.sort_order, hv.name",
+        $params
+    );
+    api_ok(array_map('slot_type_to_api', $rows));
+}
+
+/**
+ * Read what a client sent, and say what is wrong with it.
+ *
+ * `code` is the stable half - it is what a structure sync matches on, and what
+ * makes "the ISA in this library" and "the ISA in the templates" the same thing.
+ * Slugged rather than taken as typed, so "PCI Express" and "pci-express" do not
+ * become two.
+ */
+function api_slot_type_input(array $in, ?array $existing = null): array
+{
+    $data = [];
+    $errors = [];
+
+    $name = trim((string) ($in['name'] ?? ($existing['name'] ?? '')));
+    if ($name === '') {
+        $errors['name'] = 'Give it a name.';
+    } else {
+        $data['name'] = mb_substr($name, 0, 120);
+    }
+
+    // From the name when it was not given, which is the ordinary case: nobody
+    // types a code for "PCI Express" that is not "pci-express".
+    $code = trim((string) ($in['code'] ?? ''));
+    if ($code === '' && $existing === null) {
+        $code = $name;
+    }
+    if ($code !== '') {
+        $data['code'] = mb_substr(slugify($code), 0, 40);
+        if ($data['code'] === '') {
+            $errors['code'] = 'That leaves nothing to file it under.';
+        }
+    }
+
+    $kind = (string) ($in['kind'] ?? ($existing['kind'] ?? 'interface'));
+    if (!in_array($kind, ['interface', 'feature', 'socket', 'formfactor'], true)) {
+        $errors['kind'] = 'Must be interface, feature, socket or formfactor.';
+    } else {
+        $data['kind'] = $kind;
+    }
+
+    if (array_key_exists('platform_id', $in)) {
+        $platformId = (int) $in['platform_id'];
+        // 0 is "applies anywhere" and is the whole point of this field, so it is
+        // valid rather than a missing value.
+        if ($platformId !== 0 && one('SELECT id FROM platforms WHERE id = ?', [$platformId]) === null) {
+            $errors['platform_id'] = 'No machine with that id.';
+        } else {
+            $data['platform_id'] = $platformId;
+        }
+    }
+
+    if (array_key_exists('sort_order', $in)) {
+        $data['sort_order'] = (int) $in['sort_order'];
+    }
+
+    // The uniqueness the table enforces, checked here so it arrives as a field
+    // error rather than a database exception somebody has to read a log for.
+    if ($errors === [] && isset($data['code'])) {
+        $kindFor     = $data['kind'] ?? ($existing['kind'] ?? 'interface');
+        $platformFor = $data['platform_id'] ?? ($existing['platform_id'] ?? 0);
+        $clash = one(
+            'SELECT id FROM hardware_vocab WHERE kind = ? AND platform_id = ? AND code = ?'
+            . ($existing !== null ? ' AND id <> ?' : ''),
+            $existing !== null
+                ? [$kindFor, $platformFor, $data['code'], (int) $existing['id']]
+                : [$kindFor, $platformFor, $data['code']]
+        );
+        if ($clash !== null) {
+            $errors['name'] = $platformFor === 0
+                ? 'There is already one called that for every machine.'
+                : 'That machine already has one called that.';
+        }
+    }
+
+    return [$data, $errors];
+}
+
+function api_slot_types_create(): void
+{
+    api_require_write();
+    if (!is_admin_user(api_require_auth()[0]) && !can_edit_anything()) {
+        api_error('forbidden', 'You have no library you may change.', 403);
+    }
+    [$data, $errors] = api_slot_type_input(api_body());
+    if ($errors !== []) {
+        api_error('validation_failed', 'Some fields need attention.', 422, $errors);
+    }
+    $data += ['platform_id' => 0, 'sort_order' => 100];
+    $id = (int) insert_row('hardware_vocab', $data);
+    log_security('slot_type.created', sprintf('Slot type "%s" added', $data['name']),
+                 LOG_NOTICE, ['subject_type' => 'hardware_vocab', 'subject_id' => $id]);
+    api_ok(slot_type_to_api(one(
+        'SELECT hv.*, p.name AS platform_name FROM hardware_vocab hv
+      LEFT JOIN platforms p ON p.id = hv.platform_id WHERE hv.id = ?', [$id])), null, 201);
+}
+
+function api_slot_types_update(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM hardware_vocab WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No slot type with that id.', 404);
+    }
+    [$data, $errors] = api_slot_type_input(api_body(), $existing);
+    if ($errors !== []) {
+        api_error('validation_failed', 'Some fields need attention.', 422, $errors);
+    }
+    if ($data !== []) {
+        update_row('hardware_vocab', $id, $data);
+    }
+    api_ok(slot_type_to_api(one(
+        'SELECT hv.*, p.name AS platform_name FROM hardware_vocab hv
+      LEFT JOIN platforms p ON p.id = hv.platform_id WHERE hv.id = ?', [$id])));
+}
+
+function api_slot_types_delete(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM hardware_vocab WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No slot type with that id.', 404);
+    }
+    // Refused while parts name it as what they plug into.
+    //
+    // This used to guard `model_slots` as well - a machine's list of connectors,
+    // which is gone. What remains is the other direction: a card whose
+    // `interface_vocab_id` is this row, which is the half that a fitting rule
+    // actually reads.
+    //
+    // Named rather than counted, so the refusal says which models to look at.
+    $used = all(
+        'SELECT name FROM hardware_models
+          WHERE interface_vocab_id = ? ORDER BY name LIMIT 5',
+        [$id]
+    );
+    if ($used !== []) {
+        $total = (int) scalar(
+            'SELECT COUNT(*) FROM hardware_models WHERE interface_vocab_id = ?', [$id]);
+        api_error('conflict', sprintf(
+            '%s is on %d model%s, including %s. Change those first.',
+            (string) $existing['name'], $total, $total === 1 ? '' : 's',
+            implode(', ', array_column($used, 'name'))
+        ), 409);
+    }
+    delete_row('hardware_vocab', $id);
+    log_security('slot_type.deleted', sprintf('Slot type "%s" removed', (string) $existing['name']),
+                 LOG_WARNING, ['subject_type' => 'hardware_vocab', 'subject_id' => $id]);
+    api_no_content();
+}

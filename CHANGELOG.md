@@ -1,5 +1,93 @@
 # Changelog
 
+**Every example entry is made from a model, and now says so.**
+
+Both halves were already linked - a hardware example stores `model_id`, a
+software example stores `software_model_id` on its title. What was missing is
+that only one of them was visible.
+
+## The software link was invisible
+
+`titles.software_model_id` has existed throughout and `v_items` never carried it.
+So an Amiga 2000 showed the model it came from, and Blake Stone did not show that
+it came from "PC DOS, big box, floppy" - which made the packaging templates look
+like something only machines use, when in fact most entries come from one.
+
+The view carries it now and the API reports it as `software_model`. Migration 015
+replaces the view on an existing instance.
+
+**The migration is copied from schema.sql rather than retyped.** Writing it out
+by hand produced `lib.color` for a column actually called `lib.accent_color` - a
+view that reads correctly in the file and fails on the instance that runs it. A
+check now compares the two definitions, ignoring comments, so they cannot drift.
+
+## The PC side had models and nothing made from them
+
+`pc-486`, `sound-blaster-16` and `voodoo2` were all seeded and never used. So a
+fresh install showed one platform where models produce entries and another where
+they sit unused - which teaches that models are an Amiga thing rather than how
+the catalogue works.
+
+All three are catalogued now, and the two cards are fitted into the 486 the same
+way the Amiga pair are fitted into the 2000. Two hosts rather than one, because a
+single example reads as *the* way it is done rather than as one case of it.
+
+A check confirms every example names a model that actually ships, and that no
+peripheral model ships without an example. Twenty assertions, which is the kind
+of thing that only stays true if something asks.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 149**.
+
+**"What goes in it" is gone. Specifications say the same thing.**
+
+`model_slots` held a counted list of connectors per hardware model - five Zorro,
+four ISA - beside a Specifications field saying the same in prose: *"Zorro II,
+plus ISA and a CPU slot"*. One fact recorded twice, and only the prose half could
+be edited from any screen. The structured half could only be changed by editing
+`hardware_machines.json` and re-syncing.
+
+## Why the structured form would have been worth keeping, and was not
+
+A counted list against a controlled vocabulary is what *"which of my cards fit
+this machine?"* needs. Prose cannot answer it. That was the argument for the
+table, and it is written down in TAXONOMY.md.
+
+**Nothing ever asked.** `parts_fitting_model()` was written for a model detail
+page and deleted when an audit found no caller. The slot list outlived it by
+being seeded, copied between libraries, checked by a maintenance job, and finally
+displayed - but never read by a decision.
+
+Two ways to say one thing, one of them uneditable and neither of them read, is
+complexity without a return.
+
+## What went, and what stayed
+
+Gone: the table, the helper, the copy into a new library, the structure
+importer's handling, the maintenance check, the API field, and the panel on the
+web client.
+
+**`hardware_vocab` stays.** It carries sockets, form factors and features too,
+and `interface_vocab_id` uses it to say what a card plugs into - the other half
+of the pairing, and the half something reads.
+
+The vocabulary's delete guard was repointed at it. That guard counted slots, so
+after this it would have been asking a dropped table whether a row was safe to
+remove - a refusal that could never fire, on a query that could never run.
+
+**The seeded machines now say the counts in prose.** The Amiga 2000's Expansion
+field reads *"Zorro II x5, ISA x4 (bridgeboard only), video slot, CPU slot"* -
+what the slot rows carried, in the one place that can now be edited.
+
+Migration 014 drops the table. TAXONOMY.md keeps the reasoning, so that if
+*"what fits this?"* is ever wanted, the shape it needs is on record rather than
+rediscovered.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 148**.
+
 **A location sent by id was silently ignored.**
 
 `api_item_input()` read `location_path` and nothing else, so both phone clients -

@@ -198,16 +198,25 @@ could insert `('interface', NULL, 'zorro-ii')` twice and the database would
 accept both. `provider_scopes.platform_id` uses the same sentinel for the same
 reason.
 
-`model_slots` says what a model accepts in these terms, and
-`item_hardware.interface_vocab_id` says what a part presents. That pairing is
-what makes *"what do I own that fits this A1200?"* an exact query rather than a
-string comparison against free text. `model_slots` and `interface_vocab_id`
-exist for this reason, but nothing queries them yet — there is no page a model
-can be viewed on, only lists. `parts_fitting_model()` was written for that page
-and removed when an audit found no caller; the query it would run is worth
-keeping in mind if a model detail page is ever built. The free-text `interface`
-column stays alongside the vocabulary either way, so nothing is ever
-unrecordable.
+`interface_vocab_id` says what a part presents — what it plugs into. That is the
+half of the vocabulary that remains.
+
+The other half was `model_slots`, a counted list of what a machine accepts: five
+Zorro, four ISA. The pairing would have made *"what do I own that fits this
+A1200?"* an exact query rather than a string comparison against free text.
+
+**It was removed, and the reasoning is worth recording.** Nothing ever queried
+it. `parts_fitting_model()` was written for a model detail page and deleted when
+an audit found no caller; the slot list outlived it by being seeded, copied,
+checked and eventually displayed — but never read by a decision. Meanwhile a
+model's Specifications already said the same thing in prose ("Zorro II, plus ISA
+and a CPU slot"), so a model author recorded one fact twice, and only the prose
+half could be edited from a screen.
+
+Two ways to say something, one of them uneditable and neither of them read, is
+complexity without a return. If *"what fits this?"* is ever wanted, the counted
+form is what it needs and this is the note explaining what it looked like. The
+free-text `interface` column stays either way, so nothing is unrecordable.
 
 
 ## Machine specifications

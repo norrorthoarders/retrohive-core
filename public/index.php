@@ -422,6 +422,12 @@ if (str_starts_with($path, '/api/')) {
         ['PUT',    '#^/api/v1/hardware-models/(\d+)$#',      fn($id) => api_hardware_models_update((int) $id)],
         ['DELETE', '#^/api/v1/hardware-models/(\d+)$#',      fn($id) => api_hardware_models_delete((int) $id)],
 
+        ['GET',    '#^/api/v1/slot-types$#',              fn() => api_slot_types_index()],
+        ['POST',   '#^/api/v1/slot-types$#',              fn() => api_slot_types_create()],
+        ['PATCH',  '#^/api/v1/slot-types/(\d+)$#',        fn($id) => api_slot_types_update((int) $id)],
+        ['PUT',    '#^/api/v1/slot-types/(\d+)$#',        fn($id) => api_slot_types_update((int) $id)],
+        ['DELETE', '#^/api/v1/slot-types/(\d+)$#',        fn($id) => api_slot_types_delete((int) $id)],
+
         ['GET',    '#^/api/v1/software-models$#',          fn() => api_software_models_index()],
         ['POST',   '#^/api/v1/software-models$#',          fn() => api_software_models_create()],
         ['GET',    '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_show((int) $id)],

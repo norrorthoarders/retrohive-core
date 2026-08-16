@@ -732,45 +732,6 @@ function structure_apply(string $name, array $rows, bool $force = false): array
                         }
                     }
 
-                    // What the machine physically has.
-                    //
-                    // Absent from this importer until now, and the omission was
-                    // quiet in the worst way: a model with no slots declared can
-                    // hold nothing, so every machine that arrived through a
-                    // synchronise rather than through the old SQL seed file
-                    // refused every card, and refused it by simply not offering
-                    // any. Replaced wholesale rather than merged, like the
-                    // fields above: a slot list is one statement about a board.
-                    //
-                    // Codes are resolved against this platform's vocabulary, or
-                    // the platform-agnostic sentinel where it has none of its
-                    // own - the same rule the old SQL seed file applied, because
-                    // 'cpu' means a CPU slot on an Amiga and something more
-                    // general elsewhere. A code the platform does not know is
-                    // skipped rather than invented.
-                    if (array_key_exists('slots', $row) && is_array($row['slots'])) {
-                        q('DELETE FROM model_slots WHERE model_id = ?', [$modelId]);
-                        foreach ($row['slots'] as $s) {
-                            $code = trim((string) (is_array($s) ? ($s['code'] ?? '') : $s));
-                            if ($code === '') {
-                                continue;
-                            }
-                            $vocabId = scalar(
-                                'SELECT id FROM hardware_vocab
-                                  WHERE code = ? AND platform_id IN (?, 0)
-                               ORDER BY platform_id DESC LIMIT 1',
-                                [$code, (int) ($platform ?? 0)]
-                            );
-                            if ($vocabId === null) {
-                                continue;
-                            }
-                            q('INSERT IGNORE INTO model_slots (model_id, vocab_id, quantity, notes)
-                               VALUES (?, ?, ?, ?)',
-                              [$modelId, (int) $vocabId,
-                               max(1, min(255, (int) (is_array($s) ? ($s['quantity'] ?? 1) : 1))),
-                               is_array($s) ? nullify($s['notes'] ?? null) : null]);
-                        }
-                    }
                     break;
             }
         } catch (Throwable $e) {

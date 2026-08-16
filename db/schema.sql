@@ -796,20 +796,6 @@ CREATE TABLE IF NOT EXISTS model_compatibility (
     FOREIGN KEY (compatible_model_id) REFERENCES hardware_models (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS model_slots (
-  id        INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  model_id  INT UNSIGNED NOT NULL,
-  vocab_id  INT UNSIGNED NOT NULL,
-  quantity  TINYINT UNSIGNED NOT NULL DEFAULT 1,
-  notes     VARCHAR(160) DEFAULT NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_model_slot (model_id, vocab_id),
-  KEY idx_model_slots (model_id),
-  KEY idx_model_slots_vocab (vocab_id),
-  CONSTRAINT fk_slot_model FOREIGN KEY (model_id) REFERENCES hardware_models (id) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_slot_vocab FOREIGN KEY (vocab_id) REFERENCES hardware_vocab  (id) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- ---------------------------------------------------------------------------
 -- Libraries
 --
@@ -2050,6 +2036,14 @@ SELECT
   t.name  AS title_name,     t.slug AS title_slug, t.work_key AS title_work_key,
   t.synopsis AS title_synopsis,
   hm.name AS model_name,     hm.slug AS model_slug,
+  -- The packaging template the release was made from.
+  --
+  -- On the title rather than the item, because "big box with two floppies and a
+  -- manual" is a fact about the release and not about one copy of it. Carried
+  -- here so an entry can say where its shape came from - the hardware side has
+  -- always shown its model and the software side never did, which made the
+  -- templates look like something only machines used.
+  swm.id  AS software_model_id, swm.name AS software_model_name, swm.slug AS software_model_slug,
   img.filename AS cover_filename,
   loc.name AS location_name, loc.path AS location_path
 FROM items i
@@ -2061,6 +2055,9 @@ JOIN sections   s  ON s.id  = c.section_id
 LEFT JOIN companies       d   ON d.id   = i.developer_id
 LEFT JOIN companies       pb  ON pb.id  = i.publisher_id
 LEFT JOIN titles          t   ON t.id   = i.title_id
+-- After `titles`, because it hangs off it: a join referring to a table declared
+-- below it parses and then fails at runtime with "unknown column t.…".
+LEFT JOIN software_models swm ON swm.id = t.software_model_id
 LEFT JOIN hardware_models hm  ON hm.id  = i.model_id
 LEFT JOIN item_images     img ON img.id = i.cover_image_id
 LEFT JOIN locations       loc ON loc.id = i.location_id

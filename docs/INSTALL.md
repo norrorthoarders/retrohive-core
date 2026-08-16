@@ -832,7 +832,7 @@ users ──< api_tokens                 tombstones (deletion log for API sync)
 | `titles` | What a piece of software *is*, recorded once |
 | `hardware_models` | What a piece of hardware *is*, with field and slot templates |
 | `hardware_vocab` | Interfaces, sockets, form factors, features. `platform_id = 0` means anywhere |
-| `model_fields`, `model_slots` | What a model asks about, and what it will take |
+| `model_fields` | What a model asks about, filled in already where it knows |
 | `items` | Your copies: condition, completeness, price, location, status |
 | `item_hardware` | Hardware detail per unit, plus `specs`: one ordered list of label/value rows for whatever this one has |
 | `item_images` | Photos: filename, content hash, type, caption, cover flag |

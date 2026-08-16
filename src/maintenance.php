@@ -100,18 +100,6 @@ function maintenance_jobs(): array
             'repair' => 'maintenance_repair_orphan_vocab',
             'repair_label' => 'Delete them',
         ],
-        'slot_platforms' => [
-            'label'  => 'Slots belonging to another machine',
-            'scope'  => 'instance',
-            'access' => 'admin',
-            'blurb'  => 'A model slot names a connector from its own platform, or from '
-                      . 'the shared list. One pointing at another machine\'s connector is '
-                      . 'a Zorro socket on a Master System, and the fitting rules will '
-                      . 'believe it.',
-            'check'  => 'maintenance_check_slot_platforms',
-            'repair' => null,
-            'repair_label' => null,
-        ],
         'expired_tokens' => [
             'label'  => 'Expired and revoked app tokens',
             'scope'  => 'instance',
@@ -637,28 +625,6 @@ function maintenance_repair_stale_branch_pictures(): array
         $n === 1 => '1 branch updated.',
         default  => $n . ' branches updated.',
     }];
-}
-
-/** Slots pointing at a connector from a different machine. */
-function maintenance_check_slot_platforms(): array
-{
-    $bad = all(
-        "SELECT hm.name AS model, hv.code, hvp.name AS vocab_platform, hmp.name AS model_platform
-           FROM model_slots ms
-           JOIN hardware_models hm ON hm.id = ms.model_id
-           JOIN hardware_vocab hv  ON hv.id = ms.vocab_id
-      LEFT JOIN platforms hmp ON hmp.id = hm.platform_id
-      LEFT JOIN platforms hvp ON hvp.id = hv.platform_id
-          WHERE hv.platform_id IS NOT NULL
-            AND hv.platform_id <> 0
-            AND hv.platform_id <> hm.platform_id
-          LIMIT 200"
-    );
-    return maintenance_result(count($bad),
-        array_map(fn($r) => ['what' => (string) $r['model'],
-                             'detail' => $r['code'] . ' belongs to ' . ($r['vocab_platform'] ?? 'another machine')
-                                       . ', not ' . ($r['model_platform'] ?? 'this one')], $bad),
-        $bad === [] ? 'Every slot names a connector its own machine has.' : '');
 }
 
 /** Tokens that have expired or been revoked. */

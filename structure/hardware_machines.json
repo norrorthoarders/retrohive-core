@@ -29,23 +29,10 @@
         "label": "Kickstart",
         "value": "1.3",
         "choices": "1.2, 1.3, 2.0, 3.1"
-      }
-    ],
-    "slots": [
-      {
-        "code": "trap",
-        "quantity": 1,
-        "notes": "trapdoor, under the machine"
       },
       {
-        "code": "side",
-        "quantity": 1,
-        "notes": "left side expansion bus"
-      },
-      {
-        "code": "cpu",
-        "quantity": 1,
-        "notes": "CPU socket"
+        "label": "Expansion",
+        "value": "Trapdoor, side expansion bus, CPU socket"
       }
     ]
   },
@@ -69,33 +56,11 @@
       },
       {
         "label": "Expansion",
-        "value": "Zorro II, plus ISA and a CPU slot"
+        "value": "Zorro II x5, ISA x4 (bridgeboard only), video slot, CPU slot"
       },
       {
         "label": "Storage",
         "value": "floppy"
-      }
-    ],
-    "slots": [
-      {
-        "code": "zorro",
-        "quantity": 5,
-        "notes": "Zorro II bus"
-      },
-      {
-        "code": "isa",
-        "quantity": 4,
-        "notes": "ISA, bridgeboard only"
-      },
-      {
-        "code": "cpu",
-        "quantity": 1,
-        "notes": "CPU slot"
-      },
-      {
-        "code": "vid",
-        "quantity": 1,
-        "notes": "video slot"
       }
     ]
   },
@@ -124,33 +89,10 @@
       {
         "label": "Sound",
         "value": "YM2612 and SN76489"
-      }
-    ],
-    "slots": [
-      {
-        "code": "cart",
-        "quantity": 1,
-        "notes": "cartridge slot"
       },
       {
-        "code": "ctrl",
-        "quantity": 2,
-        "notes": "controller ports"
-      },
-      {
-        "code": "av",
-        "quantity": 1,
-        "notes": "video out"
-      },
-      {
-        "code": "psu",
-        "quantity": 1,
-        "notes": "power in"
-      },
-      {
-        "code": "exp",
-        "quantity": 1,
-        "notes": "expansion port, for the Mega-CD"
+        "label": "Expansion",
+        "value": "Cartridge slot, 2 controller ports, expansion port for the Mega-CD"
       }
     ]
   },
@@ -175,23 +117,6 @@
       {
         "label": "Video",
         "value": "160x144 backlit colour"
-      }
-    ],
-    "slots": [
-      {
-        "code": "cart",
-        "quantity": 1,
-        "notes": "cartridge slot"
-      },
-      {
-        "code": "link",
-        "quantity": 1,
-        "notes": "gear-to-gear port"
-      },
-      {
-        "code": "psu",
-        "quantity": 1,
-        "notes": "power in"
       }
     ]
   },
@@ -220,18 +145,6 @@
       {
         "label": "Storage",
         "value": "floppy, IDE"
-      }
-    ],
-    "slots": [
-      {
-        "code": "isa16",
-        "quantity": 6,
-        "notes": "ISA"
-      },
-      {
-        "code": "vlb",
-        "quantity": 2,
-        "notes": "VESA local bus"
       }
     ]
   },
@@ -264,18 +177,6 @@
       {
         "label": "Storage",
         "value": "CD-ROM, double speed"
-      }
-    ],
-    "slots": [
-      {
-        "code": "misc",
-        "quantity": 1,
-        "notes": "rear expansion connector, for the MPEG and SX-1 modules"
-      },
-      {
-        "code": "ser",
-        "quantity": 1,
-        "notes": "AUX serial port"
       }
     ]
   }
