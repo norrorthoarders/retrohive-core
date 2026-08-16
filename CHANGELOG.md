@@ -1,5 +1,26 @@
 # Changelog
 
+**A dead token and no token were the same 401.**
+
+Five failures produced one status: no header, an unrecognised token, a revoked
+one, an expired one, and an account since closed. The *messages* already told
+them apart - that was fixed a while ago - but a client reads codes, not prose, and
+`unauthenticated` covered all five.
+
+So a client had to guess. Guess one way and a request made before signing in logs
+somebody out of a session they were about to start; guess the other and a phone
+holding a revoked token retries forever against a wall, showing an error it cannot
+act on.
+
+`token_invalid` now marks the three that mean **this credential is dead**: revoked,
+expired, or belonging to a closed account. A request with no token at all is still
+`unauthenticated`, because that is a different thing and only one of them should
+end a session.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 146**.
+
 **`path` on a location meant two different things.**
 
 An item's `location.path` is what it is called all the way down - "Retroway 22 ›

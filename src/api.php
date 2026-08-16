@@ -264,8 +264,17 @@ function bearer_token(): ?string
  * The distinction is safe to publish. It says nothing about which token exists,
  * only what happened to the one presented, which the presenter already holds.
  */
-function api_identify(?string &$why = null): ?array
+function api_identify(?string &$why = null, ?string &$code = null): ?array
 {
+    // `$code` tells a client the difference between "you never signed in" and
+    // "the credential you hold is dead".
+    //
+    // Both are 401, and a client that cannot tell them apart has to guess. Guess
+    // one way and a network blip signs somebody out; guess the other and a phone
+    // holding a revoked token retries forever against a wall, showing an error
+    // it cannot act on. The first is the choice this makes: only a token the
+    // server has actually rejected counts as dead.
+    $code = 'unauthenticated';
     $plain = bearer_token();
     if ($plain !== null) {
         $token = one(
@@ -273,18 +282,23 @@ function api_identify(?string &$why = null): ?array
             [token_hash($plain)]
         );
         if ($token === null) {
-            $why = 'That token is not recognised. It may have been revoked - '
-                 . 'check App access on the web.';
+            $why  = 'That token is not recognised. It may have been revoked - '
+                  . 'check App access on the web.';
+            $code = 'token_invalid';
             return null;
         }
         if ($token['expires_at'] !== null && strtotime((string) $token['expires_at']) < time()) {
-            $why = 'That token expired on '
-                 . date('j M Y', (int) strtotime((string) $token['expires_at'])) . '.';
+            $why  = 'That token expired on '
+                  . date('j M Y', (int) strtotime((string) $token['expires_at'])) . '.';
+            $code = 'token_invalid';
             return null;
         }
         $user = one('SELECT id, username, display_name, avatar_filename, avatar_pending_filename, email, role, auth_method_id, is_active FROM users WHERE id = ? AND is_active = 1', [(int) $token['user_id']]);
         if ($user === null) {
-            $why = 'The account that token belongs to is closed or disabled.';
+            $why  = 'The account that token belongs to is closed or disabled.';
+            // Dead for the same purpose: this credential will never work again,
+            // whatever is wrong behind it.
+            $code = 'token_invalid';
             return null;
         }
         // Worth recording for spotting a lost device, but a syncing phone makes
@@ -315,9 +329,10 @@ function api_identify(?string &$why = null): ?array
 function api_require_auth(): array
 {
     $why = null;
-    $identity = api_identify($why);
+    $code = null;
+    $identity = api_identify($why, $code);
     if ($identity === null) {
-        api_error('unauthenticated',
+        api_error($code ?? 'unauthenticated',
                   $why ?? 'Send a valid bearer token in the Authorization header.', 401);
     }
     return $identity;
