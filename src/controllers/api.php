@@ -525,13 +525,43 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         $data['sold_currency'] = $code === '' ? null : mb_substr($code, 0, 3);
     }
 
-    // Where it is kept, by path.
+    // Where it is kept, by id.
     //
-    // The API has never handled a location at all - not by id, not by path - so
-    // "Where it is kept" on the phone was typed, sent, and silently dropped.
-    // The path is the right shape for a client: "Retroway 22 › Basement › Book
-    // Shelf 1" is what somebody knows, and an id is what the server knows.
-    if ($has('location_path')) {
+    // A client that picked from `GET /locations` holds the id, and had no way to
+    // use it: only `location_path` was read, so both phone clients sent
+    // `location_id` and were silently ignored. The save succeeded, reported
+    // success, and changed nothing - which is the worst of the three possible
+    // outcomes.
+    //
+    // Null clears it. That has to be distinguishable from "not mentioned", which
+    // is why this asks whether the key is present rather than whether it is
+    // truthy: `location_id: null` means "nowhere" and an absent key means "leave
+    // it alone".
+    if ($has('location_id')) {
+        $raw = $in['location_id'];
+        if ($raw === null || $raw === '') {
+            $data['location_id'] = null;
+        } else {
+            $wantedId = (int) $raw;
+            // Scoped to the entry's library. An id from another library is not a
+            // permission failure so much as a mistake, but filing an entry onto
+            // a shelf in somebody else's library would be a real one.
+            $libraryForId = (int) ($data['library_id'] ?? ($existing['library_id'] ?? 0));
+            $found = one('SELECT id FROM locations WHERE id = ? AND library_id = ?',
+                         [$wantedId, $libraryForId]);
+            if ($found === null) {
+                $errors['location_id'] = 'No location with that id in this library.';
+            } else {
+                $data['location_id'] = (int) $found['id'];
+            }
+        }
+    }
+
+    // Or by path, for a client that has what a person reads rather than an id.
+    //
+    // The id wins when both arrive: it is the exact thing, and a path that
+    // disagrees with it is a caller confused about which shelf it means.
+    if (!array_key_exists('location_id', $data) && $has('location_path')) {
         $path = trim((string) ($in['location_path'] ?? ''));
         if ($path === '') {
             $data['location_id'] = null;

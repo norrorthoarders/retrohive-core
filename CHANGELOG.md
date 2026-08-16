@@ -1,5 +1,30 @@
 # Changelog
 
+**A location sent by id was silently ignored.**
+
+`api_item_input()` read `location_path` and nothing else, so both phone clients -
+which pick from `GET /locations` and therefore hold an id - sent `location_id`
+and had it dropped. The save succeeded, reported success, and changed nothing,
+which is the worst of the three possible outcomes: a failure would at least have
+said so.
+
+The id is accepted now, scoped to the entry's own library. The path still works,
+for a client that has what a person reads rather than an id, and the id wins when
+both arrive - it is the exact thing, and a path disagreeing with it is a caller
+confused about which shelf it means.
+
+**Null clears it, absent leaves it alone.** That distinction is why this asks
+whether the key is present rather than whether it is truthy: `location_id: null`
+means "nowhere" and no key at all means "do not touch".
+
+The comment above the path branch said the API "has never handled a location at
+all - not by id, not by path". Half of that was fixed and half was left, and the
+half left was the half a client actually uses.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 147**.
+
 **A dead token and no token were the same 401.**
 
 Five failures produced one status: no header, an unrecognised token, a revoked
