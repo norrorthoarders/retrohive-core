@@ -269,7 +269,18 @@ function api_tokens_index(): void
 
 function api_tokens_create(): void
 {
-    [$user] = api_require_auth();
+    // A read-only token cannot mint a read-write one.
+    //
+    // This asked only for authentication, so the rule that a read token changes
+    // nothing had a hole in the middle of it: hand somebody a read-only
+    // credential and they could POST here for a write one, and the phone that
+    // was only supposed to browse could then empty a library. A token that can
+    // issue tokens is every permission it can name.
+    //
+    // Minting is a change, so it goes through the same guard every other change
+    // does rather than a rule of its own.
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
     $in = api_body();
     $name = trim((string) ($in['name'] ?? ''));
     if ($name === '') {

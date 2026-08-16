@@ -1,5 +1,47 @@
 # Changelog
 
+**A read-only token could mint a read-write one.**
+
+`POST /tokens` asked for authentication and nothing else. So the rule this scope
+exists for - a read token changes nothing - had a hole in the middle of it: hand
+somebody a read-only credential and they could ask here for a write one, and the
+phone that was only supposed to browse could then empty a library.
+
+A token that can issue tokens is every permission it can name. Minting is a
+change, and goes through the same guard every other change does.
+
+`POST` and `DELETE /profile/avatar` were the same shape and are now guarded too.
+Small on its own - somebody's picture - but a rule with exceptions is not one
+anybody can rely on.
+
+## What was checked
+
+Every write route in the API against whether it reaches a scope guard,
+transitively rather than by looking at the handler alone. 128 routes; 119 were
+already correct, three were not, and six are correct to leave open:
+
+- the five ways to *get* a token - login, register, logout, verify, resend -
+  which cannot require one
+- revoking a token, deliberately. Cancelling a credential from a read-only device
+  is a safety valve, and refusing it would mean a stolen phone in read mode
+  cannot even lock itself out.
+
+The first version of that check stopped at the handler and reported forty-four
+failures. Most call `api_require_curates_library()` or `api_require_owns_library()`,
+which guard properly one level down - a check that has to be right about a
+security rule is worth writing twice.
+
+## The rule, said plainly
+
+**Scope is a ceiling, not a grant.** A read token reads, whoever holds it: an
+administrator with a read-only token can change nothing, and a viewer with a
+write token still cannot edit. Membership decides what a person may do; scope
+decides how much of that they lent to a device.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 144**.
+
 **`model_slots` is reported, after being seeded and read by nothing since the
 beginning.**
 

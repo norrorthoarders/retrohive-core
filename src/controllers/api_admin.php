@@ -1419,7 +1419,12 @@ function api_admin_libraries_delete(int $id): void
  */
 function api_profile_avatar_upload(): void
 {
-    [$user] = api_require_auth();
+    // A picture is a change like any other. This asked only for authentication,
+    // so a read-only token could replace somebody's avatar - small, but the rule
+    // is that a read token changes nothing, and a rule with exceptions is not
+    // one anybody can rely on.
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
 
     if (!isset($_FILES['avatar'])) {
         api_error('validation_failed',
@@ -1454,7 +1459,9 @@ function api_profile_avatar_upload(): void
 /** Back to initials on a coloured circle, which is what no avatar looks like. */
 function api_profile_avatar_delete(): void
 {
-    [$user] = api_require_auth();
+    // Same rule as the upload beside it: a read-only token changes nothing.
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
     delete_user_avatar((int) $user['id']);
     log_security('profile.avatar', 'Avatar removed', LOG_INFO,
                  ['subject_type' => 'user', 'subject_id' => (int) $user['id']]);
