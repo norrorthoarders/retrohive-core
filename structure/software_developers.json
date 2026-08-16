@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "slug": "gold-disk",
+    "name": "Gold Disk",
+    "country": "Canada"
+  },
+  {
+    "slug": "digita-international",
+    "name": "Digita International",
+    "country": "United Kingdom"
+  },
+  {
+    "slug": "newtek",
+    "name": "NewTek",
+    "country": "United States",
+    "website": "https://www.newtek.com/"
+  }
+]

@@ -1,5 +1,160 @@
 # Changelog
 
+**The last three packaging templates have something made from them.**
+
+`laserdisc-case`, `dvd-case` and `cassette-case` shipped and nothing used them. A
+template that exists and is demonstrated by nothing is a screen somebody has to
+guess the purpose of - so a fresh install now has nineteen examples covering
+every template it ships.
+
+- **The Long Quiet** on LaserDisc, and **Harbour Lights** on DVD, both from
+  Silverreel Pictures - the same studio and director as the Blu-ray example, so
+  the video side shows a studio with a body of work rather than one film each.
+- **Tape Hiss Lullabies** on cassette, from a different label to the other two.
+  Two releases on one label read as "this is where a label goes"; three across two
+  labels read as a field that varies.
+
+## A trap worth naming
+
+The loop skips an example whose title is already on the shelf, which is what
+makes a re-run safe. So a second copy of an existing title would be **silently
+skipped** - and the template it was added for would still have nothing made from
+it, with no error to say so.
+
+My first draft did exactly that: a second "Metropolis Nights" on LaserDisc. A
+check now confirms no two examples share a title.
+
+## Two checks that failed on unrelated growth
+
+The unused-template check carried an exception list naming those three. It is
+empty now, so the exception is gone rather than kept as a comment about history.
+
+And a check reading "the first 4000 characters of the video seeder" reported that
+video had stopped using `seed_company_for_name()` - because the function grew.
+A check with a magic length in it fails on things that are not about it. It reads
+the whole function now.
+
+That is three brittle assertions in three rounds. The pattern is the same each
+time: a check pinned to a count or a length rather than to the property it cares
+about.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 153**.
+
+**The video and music examples did not know models existed.**
+
+Software examples name a packaging template. Hardware examples name a machine
+model. The video and audio ones named neither - so seven of the twelve shipped
+packaging templates had nothing made from them, and half the example set
+demonstrated the feature while the other half quietly did not.
+
+A Blu-ray case, a VHS clamshell, a CD jewel case and a vinyl sleeve all ship, and
+the four examples are on exactly those platforms. They name them now, store
+`software_model_id` on the title, and carry the fields the template declares -
+Running time, Region code, Speed, Size.
+
+## Three templates still have no example, and that is recorded
+
+`laserdisc-case`, `dvd-case` and `cassette-case` are for platforms with no
+example at all. That is a different gap: an example needs a platform, a category
+and a plausible title, not just a template.
+
+The check names those three rather than asserting "nothing is unused" - an
+exception written down is one somebody can disagree with later, and a list that
+quietly passes is one nobody rereads.
+
+## A check that broke on the right thing happening
+
+The previous round asserted that exactly two places blank a missing default. Four
+do now, and it failed - on precisely the change it should have welcomed. It
+counts field readers and requires all of them to blank, rather than counting to a
+number that was true on the day it was written.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 152**.
+
+**The developer lookups did resolve. What they did on a miss was wrong.**
+
+Every company the software examples name - Team17, id Software, JAM Productions,
+Apogee, Sir-Tech, Llamasoft, Electronic Arts - is in `game_developers.json` and
+resolves on a full install. The question was worth asking anyway, because the
+*shape* of the lookup was wrong in two ways.
+
+**The three example sets disagreed with each other.** Video and music have always
+used `seed_company_for_name()`, which finds or creates. Software matched by name
+and gave up, on the stated reasoning that an example should never invent a
+studio - a rule only one of the three followed.
+
+**A silent null is the wrong failure.** An example whose developer did not
+resolve became a release nobody made, which is not something a catalogue should
+demonstrate. On a full install this changes nothing; on a partial one - companies
+not seeded - it is the difference between an entry with its maker and an entry
+with a blank.
+
+## software_developers.json was empty
+
+Not a bug on its own - the file exists so an application house can be told apart
+from a games one, and the importer defaults its rows to `domain: software` rather
+than `game`. It had no rows to default.
+
+Three now: Gold Disk, Digita International and NewTek - the Amiga's serious
+software houses, which is what the file is for.
+
+**Only the fields the importer writes.** A first draft carried `notes`, which is
+read for a company from other feeds and never for a developer - a key that looks
+like data, is parsed, and is discarded. A check now rejects any field the writer
+would silently drop.
+
+## Electronic Arts publishes an application
+
+Deluxe Paint IV is the application example and EA was tagged `game`. It is
+`both`, which the importer already accepts and nothing was using.
+
+Fourteen checks confirm every named company ships, all three seeders use the same
+find-or-create, and no call site still expects the old return shape.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 151**.
+
+**A seeded example named its model and had none of the model's fields.**
+
+The Amiga 2000 example pointed at the Amiga 2000 model, and its Specifications
+were empty. De-selecting the model and picking the same one again filled them
+in - which is the tell: **the web form applies a model's fields in the browser
+the moment somebody picks one**, and the seeder never did the equivalent.
+
+So the one place a new instance shows what models are for was the one place they
+did nothing.
+
+## Both halves had it
+
+A hardware model declares Processor, Memory, Expansion, Storage; a packaging
+model declares Minimum memory, Copy protection, Sound support. Neither was
+carried onto the examples made from them. Both are now.
+
+**A field with no default is still offered, empty.** The label is the model
+saying *this is worth recording about this kind of thing* - a serial number
+differs unit to unit and the label is the useful half. Filling in a plausible
+answer would be the installer making claims about somebody's copy.
+
+## One bug this nearly introduced
+
+`item_hardware` was only written when a machine had a board revision, so an
+Amiga 2000 - which has none - got no hardware row at all, and the specs would
+have had nowhere to go. The row is written when there is either.
+
+Twelve checks now confirm both seeders read the right table, write the right
+column, and that every column they name exists in the schema. Two of those
+assertions are about column names, which is where the last mistake of this kind
+came from.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 150**.
+
 **Every example entry is made from a model, and now says so.**
 
 Both halves were already linked - a hardware example stores `model_id`, a

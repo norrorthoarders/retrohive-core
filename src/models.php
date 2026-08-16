@@ -2735,8 +2735,37 @@ function seed_library_examples(int $libraryId): int
             'location_position' => $onShelf ? $position : null,
         ]);
 
-        if ($rev !== null) {
-            insert_row('item_hardware', ['item_id' => $itemId, 'board_revision' => $rev]);
+        // What the model says this kind of machine is worth recording.
+        //
+        // The model has carried these since the beginning - Processor, Memory,
+        // Expansion, Storage - and the example never took them, so a fresh
+        // install showed an Amiga 2000 that named its model and had no
+        // specifications. The web form applies them the moment somebody picks a
+        // model, which is why de-selecting and re-picking the same one filled
+        // them in: the browser did the work the seeder never did.
+        //
+        // A row with no default is still offered, empty. It is the model saying
+        // "this is worth recording about this kind of machine" - a serial number
+        // differs unit to unit and the label is the useful half.
+        $specs = [];
+        foreach (all('SELECT label, default_value FROM model_fields
+                       WHERE model_id = ? ORDER BY sort_order, label',
+                     [(int) $model['id']]) as $f) {
+            $specs[] = [
+                'label' => (string) $f['label'],
+                'value' => (string) ($f['default_value'] ?? ''),
+            ];
+        }
+
+        // One row rather than two. `board_revision` used to be the only reason
+        // this table was touched, so a machine with no revision got no hardware
+        // row at all - and the specs would have had nowhere to go.
+        if ($rev !== null || $specs !== []) {
+            insert_row('item_hardware', [
+                'item_id'        => $itemId,
+                'board_revision' => $rev,
+                'specs'          => $specs === [] ? null : json_encode($specs),
+            ]);
         }
         $created[$slug] = $itemId;
         $made++;
@@ -2935,14 +2964,25 @@ function seed_library_software_examples(int $libraryId): int
             continue;
         }
 
-        // The maker, if the starter companies are here. Matched by name rather than
-        // created, so an example never invents a studio.
-        $dev = one("SELECT id FROM companies
-                     WHERE library_id = ? AND name = ? AND FIND_IN_SET('software', makes)",
-                   [$libraryId, $ex['developer']]);
-        $pub = empty($ex['publisher']) ? null : one("SELECT id FROM companies
-                     WHERE library_id = ? AND name = ? AND FIND_IN_SET('software', makes)",
-                   [$libraryId, $ex['publisher']]);
+        // The maker, found or made.
+        //
+        // This matched by name and gave up if the name was not there, on the
+        // reasoning that an example should never invent a studio. Two problems
+        // with that: the video and music examples have always used
+        // seed_company_for_name(), which creates - so the three example sets
+        // disagreed about a rule only one of them followed. And a silent null is
+        // the wrong failure: an example whose developer did not resolve looked
+        // like a release nobody made, which is not a thing the catalogue should
+        // demonstrate.
+        //
+        // The names do all resolve today - every one is in
+        // game_developers.json - so this changes nothing on a full install. It
+        // changes what happens on a partial one, where the companies were not
+        // seeded: an entry with its maker rather than an entry with a blank.
+        $dev = seed_company_for_name($libraryId, (string) $ex['developer'], 'software');
+        $pub = empty($ex['publisher'])
+             ? null
+             : seed_company_for_name($libraryId, (string) $ex['publisher'], 'software');
 
         // The work, recorded once - the thing a second copy would point at.
         //
@@ -2961,7 +3001,7 @@ function seed_library_software_examples(int $libraryId): int
         $titleId = (int) insert_row('titles', [
             'platform_id'       => $platformId,
             'category_id'       => (int) $cat['id'],
-            'developer_id'      => $dev === null ? null : (int) $dev['id'],
+            'developer_id'      => $dev,
             'software_model_id' => $model === null ? null : (int) $model['id'],
             'name'              => $ex['name'],
             'slug'              => unique_slug('titles', slugify($ex['name'] . '-amiga')),
@@ -2981,6 +3021,19 @@ function seed_library_software_examples(int $libraryId): int
         }
         }
 
+        // What the packaging model asks about a release of this shape.
+        $modelSpecs = [];
+        if ($model !== null) {
+            foreach (all('SELECT label, default_value FROM software_model_fields
+                           WHERE model_id = ? ORDER BY sort_order, label',
+                         [(int) $model['id']]) as $f) {
+                $modelSpecs[] = [
+                    'label' => (string) $f['label'],
+                    'value' => (string) ($f['default_value'] ?? ''),
+                ];
+            }
+        }
+
         // And the copy on the shelf, with what this one actually has.
         $itemId = (int) insert_row('items', [
             'library_id'    => $libraryId,
@@ -2988,18 +3041,30 @@ function seed_library_software_examples(int $libraryId): int
             'category_id'   => (int) $cat['id'],
             'title_id'      => $titleId,
             'title'         => $ex['name'],
-            'developer_id'  => $dev === null ? null : (int) $dev['id'],
+            'developer_id'  => $dev,
             // Who sold it, when that is somebody else. On the Amiga examples the
             // maker and the publisher are the same firm and this stays null; on
             // a shareware-era PC release they are the whole story - JAM
             // Productions wrote Blake Stone and Apogee sold it.
-            'publisher_id'  => $pub === null ? null : (int) $pub['id'],
+            'publisher_id'  => $pub,
             'release_year'  => $ex['year'],
             'media_type'    => $ex['media'],
             'status'        => 'owned',
             'has_box'       => 1,
             'condition_box' => $ex['box'],
             'completeness'  => 'cib',
+            // What the packaging model says is worth recording about a release
+            // of this shape - minimum memory, copy protection, sound support.
+            //
+            // The same omission as the hardware examples had: the model declares
+            // the fields, the web form applies them the moment somebody picks
+            // one, and the seeder did not - so an example made from a template
+            // showed none of what the template asks.
+            //
+            // Left empty rather than invented. The label is the model saying
+            // what is worth knowing; filling in a plausible answer would be the
+            // installer making claims about somebody else's copy.
+            'specs'         => $modelSpecs === [] ? null : json_encode($modelSpecs),
         ]);
 
         $order = 0;
@@ -3112,6 +3177,7 @@ function seed_library_video_examples(int $libraryId): int
         [
             'name'      => 'Metropolis Nights',
             'platform'  => 'blu-ray',
+            'model'     => 'bluray-case',
             // A genre, not the kind branch above it.
             //
             // These filed under 'movies' and 'tv-shows' because that was as deep
@@ -3129,11 +3195,42 @@ function seed_library_video_examples(int $libraryId): int
         [
             'name'      => 'Late Shift Detective',
             'platform'  => 'vhs',
+            'model'     => 'vhs-clamshell',
             'category'  => 'tv-crime',
             'studio'    => 'Harborlight Television',
             'director'  => 'Marcus Idoia',
             'year'      => 1991,
             'box'       => 'good',
+        ],
+        // One release per shipped video template, so none of them arrives with
+        // nothing made from it. A template that exists and is demonstrated by
+        // nothing is a screen somebody has to guess the purpose of.
+        //
+        // Distinct titles, deliberately. The loop skips an example whose title
+        // is already on the shelf, which is what makes a re-run safe - so a
+        // second "Metropolis Nights" on LaserDisc would be silently skipped and
+        // the template it was added for would still have nothing made from it.
+        // Two formats of one film is a good thing to show and needs the work_key
+        // machinery rather than a repeated title.
+        [
+            'name'      => 'The Long Quiet',
+            'platform'  => 'laserdisc',
+            'model'     => 'laserdisc-case',
+            'category'  => 'movie-drama',
+            'studio'    => 'Silverreel Pictures',
+            'director'  => 'Corinne Vasquez',
+            'year'      => 1984,
+            'box'       => 'good',
+        ],
+        [
+            'name'      => 'Harbour Lights',
+            'platform'  => 'dvd',
+            'model'     => 'dvd-case',
+            'category'  => 'movie-drama',
+            'studio'    => 'Silverreel Pictures',
+            'director'  => 'Corinne Vasquez',
+            'year'      => 2003,
+            'box'       => 'very_good',
         ],
     ] as $ex) {
         if (one('SELECT id FROM items WHERE library_id = ? AND title = ?', [$libraryId, $ex['name']]) !== null) {
@@ -3144,6 +3241,27 @@ function seed_library_video_examples(int $libraryId): int
         if ($plat === null) {
             continue;
         }
+        // The packaging template, and what it says is worth recording about a
+        // release in that shape - a running time, a region code, a speed.
+        //
+        // Resolved the same way the software examples do it, so all four example
+        // sets agree about what a model is for rather than three agreeing and
+        // one not knowing models exist.
+        $model = one('SELECT id FROM software_models WHERE library_id = ? AND slug = ?',
+                     [$libraryId, (string) ($ex['model'] ?? '')]);
+        $modelId = $model === null ? null : (int) $model['id'];
+        $modelSpecs = [];
+        if ($modelId !== null) {
+            foreach (all('SELECT label, default_value FROM software_model_fields
+                           WHERE model_id = ? ORDER BY sort_order, label',
+                         [$modelId]) as $f) {
+                $modelSpecs[] = [
+                    'label' => (string) $f['label'],
+                    'value' => (string) ($f['default_value'] ?? ''),
+                ];
+            }
+        }
+
         $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
                    [$libraryId, $plat['id'], $ex['category']]);
         if ($cat === null) {
@@ -3182,6 +3300,12 @@ function seed_library_video_examples(int $libraryId): int
                 'platform_id'  => (int) $plat['id'],
                 'category_id'  => (int) $cat['id'],
                 'developer_id' => $studioId,
+                // Which packaging template this release came from - a clamshell,
+                // a jewel case, a sleeve. The software examples have named one
+                // throughout and these did not, so the video and audio packaging
+                // models shipped with nothing made from them: seven templates on
+                // a fresh install that existed and demonstrated nothing.
+                'software_model_id' => $modelId,
                 'name'         => $ex['name'],
                 'slug'         => unique_slug('titles', slugify($ex['name'] . '-' . $ex['platform'])),
                 'work_key'     => slugify($ex['name']),
@@ -3198,6 +3322,10 @@ function seed_library_video_examples(int $libraryId): int
             'title'         => $ex['name'],
             'developer_id'  => $studioId,
             'release_year'  => $ex['year'],
+            // What the packaging model asks about a release in this shape.
+            // Empty values, because the label is the model saying what is worth
+            // knowing and the installer must not answer for somebody's copy.
+            'specs'         => $modelSpecs === [] ? null : json_encode($modelSpecs),
             'status'        => 'owned',
             'has_box'       => 1,
             'condition_box' => $ex['box'],
@@ -3227,6 +3355,7 @@ function seed_library_music_examples(int $libraryId): int
         [
             'name'      => 'Nightbound Sessions',
             'platform'  => 'cd',
+            'model'     => 'cd-jewel-case',
             'category'  => 'music-jazz',
             'artist'    => 'The Coastline Drifters',
             'composer'  => 'Naomi Fentress',
@@ -3237,6 +3366,7 @@ function seed_library_music_examples(int $libraryId): int
         [
             'name'      => 'Analogue Horizon',
             'platform'  => 'vinyl',
+            'model'     => 'vinyl-sleeve',
             'category'  => 'music-electronic',
             'artist'    => 'Solvent Skies',
             'composer'  => 'Erik Halvorsen',
@@ -3244,6 +3374,23 @@ function seed_library_music_examples(int $libraryId): int
             'year'      => 1979,
             'box'       => 'good',
             'tags'      => 'favourite',
+        ],
+        // The cassette template, which shipped with nothing made from it.
+        //
+        // A different artist and label from the other two, so the audio examples
+        // show more than one of each - two releases on the same label read as
+        // "this is where a label goes", three on two labels read as a field that
+        // varies.
+        [
+            'name'      => 'Tape Hiss Lullabies',
+            'platform'  => 'cassette',
+            'model'     => 'cassette-case',
+            'category'  => 'music-folk',
+            'artist'    => 'Wren & the Ferrymen',
+            'composer'  => 'Wren Ashcroft',
+            'label'     => 'Tidewater Tapes',
+            'year'      => 1986,
+            'box'       => 'fair',
         ],
     ] as $ex) {
         if (one('SELECT id FROM items WHERE library_id = ? AND title = ?', [$libraryId, $ex['name']]) !== null) {
@@ -3259,6 +3406,27 @@ function seed_library_music_examples(int $libraryId): int
         // missing, which is what an instance whose structure feed predates the
         // genres will find: an example filed one level up is worse than a
         // perfect one and much better than none.
+        // The packaging template, and what it says is worth recording about a
+        // release in that shape - a running time, a region code, a speed.
+        //
+        // Resolved the same way the software examples do it, so all four example
+        // sets agree about what a model is for rather than three agreeing and
+        // one not knowing models exist.
+        $model = one('SELECT id FROM software_models WHERE library_id = ? AND slug = ?',
+                     [$libraryId, (string) ($ex['model'] ?? '')]);
+        $modelId = $model === null ? null : (int) $model['id'];
+        $modelSpecs = [];
+        if ($modelId !== null) {
+            foreach (all('SELECT label, default_value FROM software_model_fields
+                           WHERE model_id = ? ORDER BY sort_order, label',
+                         [$modelId]) as $f) {
+                $modelSpecs[] = [
+                    'label' => (string) $f['label'],
+                    'value' => (string) ($f['default_value'] ?? ''),
+                ];
+            }
+        }
+
         $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
                    [$libraryId, $plat['id'], $ex['category']]);
         if ($cat === null) {
@@ -3288,6 +3456,9 @@ function seed_library_music_examples(int $libraryId): int
                 'category_id'  => (int) $cat['id'],
                 'developer_id' => $artistId,
                 'publisher_id' => $labelId,
+                // The sleeve or case this release came in, as on the video and
+                // software examples.
+                'software_model_id' => $modelId,
                 'name'         => $ex['name'],
                 'slug'         => unique_slug('titles', slugify($ex['name'] . '-' . $ex['platform'])),
                 'work_key'     => slugify($ex['name']),
@@ -3305,6 +3476,7 @@ function seed_library_music_examples(int $libraryId): int
             'developer_id'  => $artistId,
             'publisher_id'  => $labelId,
             'release_year'  => $ex['year'],
+            'specs'         => $modelSpecs === [] ? null : json_encode($modelSpecs),
             'status'        => 'owned',
             'has_box'       => 1,
             'condition_box' => $ex['box'],
