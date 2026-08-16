@@ -1,5 +1,25 @@
 # Changelog
 
+**`path` on a location meant two different things.**
+
+An item's `location.path` is what it is called all the way down - "Retroway 22 ›
+Basement › Book Shelf 1", built by `location_breadcrumb()`. The locations *list*
+sent the column of the same name, which is the materialised id path: `/1/2/3/`,
+maintained for subtree queries and never a label.
+
+So a client reading `path` got a readable name from one endpoint and `/1/2/3/`
+from the other, which is exactly what the mobile location pickers drew.
+
+`breadcrumb` is the readable one on the list now. `path` still carries the ids,
+because that is what it is for and something may be querying with it.
+
+One field name meaning two things is the defect. A second name for the second
+thing is the fix.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 145**.
+
 **A read-only token could mint a read-write one.**
 
 `POST /tokens` asked for authentication and nothing else. So the rule this scope

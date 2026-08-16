@@ -2144,7 +2144,18 @@ function location_to_api(array $r): array
         'library_id'  => (int) $r['library_id'],
         'parent_id'   => $r['parent_id'] === null ? null : (int) $r['parent_id'],
         'name'        => $r['name'],
+        // The materialised id path - "/1/2/3/" - which is what the column holds
+        // and what a subtree query needs. Not a label, and never was.
         'path'        => $r['path'],
+        // What it is called, all the way down: "Retroway 22 › Basement › Shelf 1".
+        //
+        // An item's own `location.path` has always been this, built by
+        // location_breadcrumb(). The list sent the id path under the same name,
+        // so a client reading `path` got a readable label from one endpoint and
+        // "/1/2/3/" from the other - which is exactly what the mobile pickers
+        // drew. One field name meaning two things is the defect; a second name
+        // for the second thing is the fix.
+        'breadcrumb'  => location_breadcrumb((int) $r['id']),
         'depth'       => (int) $r['depth'],
         'floor_level' => $r['floor_level'] === null ? null : (int) $r['floor_level'],
         'notes'       => $r['notes'],
