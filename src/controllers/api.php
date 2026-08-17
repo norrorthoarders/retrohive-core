@@ -1047,6 +1047,24 @@ function api_item_images_upload(int $itemId): void
         fn($img) => !in_array($img['id'], $before, true)
     ));
 
+    // The entry, loaded rather than assumed.
+    //
+    // `$item` was used here and never assigned - so every multipart upload
+    // reached this line, passed null into a function typed `array`, and returned
+    // 500. The base64 path was the only one anybody had exercised.
+    //
+    // Not taken from api_guard_image_write() above: that returns a library id
+    // and one of its three callers uses it as one, so widening the return type
+    // to fix this would change a signature to suit a single call site.
+    $item = find_item($itemId);
+    if ($item === null) {
+        // The guard above proved it existed a moment ago, so this is a deletion
+        // between the two - and the picture is stored against a row that has
+        // gone. Reported rather than crashed on, which is what the missing
+        // assignment did.
+        api_error('not_found', 'That entry no longer exists.', 404);
+    }
+
     $held = api_hold_new_images($item, $new);
     if ($held > 0) {
         // Re-read, because the rows now say something different from the copies

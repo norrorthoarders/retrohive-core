@@ -1,5 +1,42 @@
 # Changelog
 
+**Uploading a photograph returned 500. `$item` was never assigned.**
+
+`api_item_images_upload()` passed `$item` to `api_hold_new_images()`, which is
+typed `array` - and nothing in the function ever set it. PHP made it null, and
+the TypeError fired at the moment the typed parameter refused it.
+
+    api_hold_new_images(): Argument #1 ($item) must be of type array, null given
+
+The entry is loaded now. Not taken from the guard above it, which already reads
+the row and throws it away: that returns a library id and one of its three
+callers uses it as one, so widening the return type to fix this would change a
+signature to suit a single call site.
+
+An entry deleted between the guard and this line is a 404 rather than a crash -
+which is what the missing assignment was, once the picture had already been
+stored.
+
+## Why nothing caught it
+
+The variable is read once and written nowhere, which PHP does not consider an
+error. It fails only where a type declaration refuses the null - so the same bug
+one line earlier, into an untyped parameter, would have been a silent no-op
+instead.
+
+The base64 path reached the same line and had presumably been the one exercised;
+the multipart path is what a phone uses, and this was the first phone.
+
+I looked for the same shape across the engine afterwards. Seventy-eight
+candidates, every one of them a closure parameter, a sort callback or a
+by-reference out - which is to say the scan cannot tell them apart and is not
+worth keeping. What is kept is a check that this function loads the entry before
+using it, and that both upload paths reach one hold.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 154**.
+
 **The last three packaging templates have something made from them.**
 
 `laserdisc-case`, `dvd-case` and `cassette-case` shipped and nothing used them. A
