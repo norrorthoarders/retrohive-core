@@ -135,7 +135,7 @@ not echoed and are typed twice, and each answer is checked as it is given — a 
 that asks fifteen questions and then complains about the third has wasted the
 other twelve. Nothing is written until the end.
 
-Add `--save-answers install.rsp` and it writes the answers out afterwards, in the
+Add `--save-answers install.json` and it writes the answers out afterwards, in the
 same form the wizard hands you, so the machine after this one needs no questions
 either. `--answers` and `--interactive` combine: the file fills in what it knows
 and the questions cover the rest.
@@ -143,21 +143,56 @@ and the questions cover the rest.
 From a file:
 
 ```
-php bin/install.php --example > install.rsp
-chmod 600 install.rsp
-$EDITOR install.rsp
-php bin/install.php --answers install.rsp --dry-run
-php bin/install.php --answers install.rsp
+php bin/install.php --example > install.json
+chmod 600 install.json
+$EDITOR install.json
+php bin/install.php --answers install.json --dry-run
+php bin/install.php --answers install.json
 ```
 
-The response file is INI in shape and `.rsp` by name, in five sections. `--example`
-prints a commented one, and
-**the last page of the web installer writes one from the answers you just gave** —
-which is the easiest way to get a correct file for the second machine.
+The response file is JSON, in six objects: `db`, `admin`, `instance`, `server`,
+`install`, and `metadata`. **The last page of the web installer writes one from the
+answers you just gave** — which is the easiest way to get a correct file for the
+second machine.
 
-INI rather than PHP, because the wizard accepts one by upload and `require` on an
-uploaded file is remote code execution wearing a hat. `parse_ini_string()`
-executes nothing.
+It holds settings and nothing else. `--example` writes the file to standard output
+and what the settings mean to standard error, so `> install.json` gives you a file
+a machine can read and a terminal that explains it.
+
+INI is still read, because files written by an earlier version exist and a
+provisioning tool that templates one should not break on an upgrade. Neither
+format is PHP: the wizard accepts an upload, and `require` on an uploaded file is
+remote code execution wearing a hat.
+
+## The metadata sources
+
+Every lookup source is switched on individually, under `metadata.agents`:
+
+```json
+"metadata": {
+  "agents": {
+    "wikipedia": { "enable": true },
+    "igdb": {
+      "enable": true,
+      "client_id": "...",
+      "api_key": "..."
+    }
+  }
+}
+```
+
+`install.metadata_sources` is the default for a source not named there. A source
+needing an account stays off unless its credentials are present — and credentials
+with no `enable` line count as yes, because pasting a key is saying what you want
+as plainly as a flag would.
+
+Every source is probed before it is switched on, so a wrong key is reported during
+the install rather than months later by a lookup that half works. A source asked
+for and not given its credentials is reported; one never mentioned is not, because
+then it is simply one this instance does not use.
+
+`php bin/install.php --example` lists them all, with each one's homepage and what
+its credential fields are called.
 
 The wizard offers it twice: on the **review** step, beside *Install now*, where
 you are looking at the whole plan and deciding it is right — and again on the
@@ -258,7 +293,7 @@ is non-zero when it does not, so a run is either invisible or explained:
 
 ```
 RETROHIVE_DB_PASS=... RETROHIVE_ADMIN_PASS=... \
-  php bin/install.php --answers install.rsp --quiet || exit 1
+  php bin/install.php --answers install.json --quiet || exit 1
 ```
 
 `RETROHIVE_DB_PASS` and `RETROHIVE_ADMIN_PASS` override `db.pass` and

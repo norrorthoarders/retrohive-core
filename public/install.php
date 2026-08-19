@@ -2017,6 +2017,18 @@ if (!$running) {
       // document root has undone the reason none of the credentials are in it.
       ?>
       <a class="btn" href="?download=answers" style="margin-left:.4rem">Download answers</a>
+      <?php
+      // Said here rather than written into the file.
+      //
+      // The file used to carry its own explanation as `_help` keys the parser
+      // ignored, which made a machine-read artifact mostly prose. A page has
+      // room for the explanation; the file should be settings.
+      ?>
+      <p class="hint" style="margin:.4rem 0 0">
+        Settings only - what they mean is in <code>docs/INSTALL.md</code>. The two
+        passwords are left blank; set <code>RETROHIVE_DB_PASS</code> and
+        <code>RETROHIVE_ADMIN_PASS</code> instead and they need not be written down.
+      </p>
     </form>
     <?php
     // Something to look at while it works.

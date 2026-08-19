@@ -381,6 +381,7 @@ function run_sql_file(PDO $pdo, string $file): array
  * never trips a foreign key. Anything else in the database is left alone -
  * the schema may well be sharing space with something unrelated.
  */
+
 /**
  * Every table and view schema.sql creates, read from schema.sql.
  *
@@ -536,6 +537,7 @@ function leftover_retrohive_objects(PDO $pdo, array $objects): array
 }
 
 /** Remove uploaded photos, leaving the directory and its .htaccess in place. */
+
 /**
  * Empty the uploads directory.
  *
@@ -764,12 +766,65 @@ function answers_placeholders(): array
 }
 
 /**
- * An answer file, from a set of answers.
+ * What the settings mean, for a person rather than for the parser.
  *
- * Written with the comments, because the person opening it is about to fill in
- * four blanks and choose between three words for `deploy`, and a bare key with
- * no explanation is how the wrong one gets chosen.
+ * Written beside the file rather than inside it: a response file is read by a
+ * machine, and prose it is required to ignore is noise in the one artifact that
+ * should be nothing but configuration.
+ *
+ * The credential labels come from the definitions, because a field called
+ * `api_key` does not say "API Read Access Token" - which is what TMDB wants and
+ * the only thing it accepts.
+ *
+ * @return list<string>
  */
+function answers_guidance(): array
+{
+    $lines = [
+        'Fill in the four blanks and this installs without asking anything:',
+        '',
+        '    php bin/install.php --answers this-file.json --dry-run',
+        '    php bin/install.php --answers this-file.json',
+        '',
+        'The web installer takes it too, on its first page.',
+        '',
+        'RETROHIVE_DB_PASS and RETROHIVE_ADMIN_PASS override the two passwords,',
+        'which keeps them out of the file for good.',
+        '',
+        'install.deploy   install  build the structure in an empty database',
+        '                 erase    drop what is there first - destroys the collection',
+        '                 keep     leave the database alone, write the configuration only',
+        'install.force_erase  erase alone stops to be confirmed. Set this to mean it.',
+        'install.structure    remote, shipped or none.',
+        'install.metadata_sources  the default for a source metadata.agents does not name.',
+        '',
+        'metadata.agents.<name>.enable switches a source on. Left out, a free source',
+        'follows install.metadata_sources and one needing an account stays off.',
+        'Credentials with no enable line count as yes.',
+        '',
+    ];
+
+    if (function_exists('metadata_provider_types')) {
+        $lines[] = 'The sources:';
+        foreach (metadata_provider_types() as $type => $def) {
+            $keyed = !empty($def['needs_key']);
+            $line  = '  ' . str_pad((string) $type, 14) . (string) ($def['label'] ?? $type);
+            if (isset($def['homepage'])) {
+                $line .= ' - ' . (string) $def['homepage'];
+            }
+            $lines[] = $line;
+            if (!$keyed) {
+                continue;
+            }
+            foreach (($def['credentials'] ?? ['api_key' => ['label' => 'API key']]) as $field => $meta) {
+                $lines[] = '                  ' . $field . ': ' . (string) ($meta['label'] ?? $field);
+            }
+        }
+    }
+
+    return $lines;
+}
+
 /**
  * An answer file, as JSON.
  *
@@ -777,25 +832,25 @@ function answers_placeholders(): array
  * keys, because that is what the thing is: sections, and under metadata, one
  * object per source with its own settings in it.
  *
- * JSON has no comments, and the INI file's were doing real work - somebody
- * opening this is about to choose between three words for `deploy`. They are
- * kept as `_help` keys, which the parser ignores. An explanation that survives
- * as data is better than one dropped because the format has no place for it.
+ * Settings only. What they mean is answers_guidance(), written beside the file
+ * rather than into it.
  */
 function answers_export_json(array $v): string
 {
     $ph = answers_placeholders();
 
+    // Settings only.
+    //
+    // This carried a `_help` array per section, on the reasoning that JSON has
+    // no comments and the guidance the INI file held was worth keeping. It was
+    // worth keeping; it was not worth keeping *here*. A response file is read by
+    // a machine, and fifteen blocks of prose it is required to ignore is noise
+    // in the one artifact that should be nothing but configuration.
+    //
+    // The guidance goes to stderr when `--example` writes one, so `> install.json`
+    // gives a clean file and the terminal still explains it. Two streams, each
+    // carrying what it is for.
     $tree = [
-        '_help' => [
-            'This installs without asking anything:',
-            '    php bin/install.php --answers this-file.json --dry-run',
-            '    php bin/install.php --answers this-file.json',
-            'The web installer takes it too, on its first page.',
-            'Keys beginning with an underscore are ignored.',
-            'RETROHIVE_DB_PASS and RETROHIVE_ADMIN_PASS override the two passwords,',
-            'which keeps them out of this file for good.',
-        ],
         'db' => [
             'host' => (string) ($v['db']['host'] ?? '127.0.0.1'),
             'port' => (int) ($v['db']['port'] ?? 3306),
@@ -804,14 +859,12 @@ function answers_export_json(array $v): string
             'pass' => (string) ($v['db']['pass'] ?? '') !== '' ? (string) $v['db']['pass'] : $ph['db.pass'],
         ],
         'admin' => [
-            '_help'        => 'The first account. It is an administrator.',
             'username'     => (string) ($v['admin']['username'] ?? '') !== '' ? (string) $v['admin']['username'] : $ph['admin.username'],
             'password'     => (string) ($v['admin']['password'] ?? '') !== '' ? (string) $v['admin']['password'] : $ph['admin.password'],
             'email'        => (string) ($v['admin']['email'] ?? ''),
             'display_name' => (string) ($v['admin']['display_name'] ?? ''),
         ],
         'instance' => [
-            '_help'           => 'url is the address people use, and what links in mail are built from.',
             'name'            => (string) ($v['instance']['name'] ?? 'RetroHive'),
             'tagline'         => (string) ($v['instance']['tagline'] ?? ''),
             'url'             => (string) ($v['instance']['url'] ?? ''),
@@ -822,18 +875,10 @@ function answers_export_json(array $v): string
             'debug_status'    => (bool) ($v['instance']['debug_status'] ?? false),
         ],
         'server' => [
-            '_help'     => 'Only bin/install.php reads these, and only when it runs as root.',
             'web_user'  => (string) ($v['server']['web_user'] ?? ''),
             'web_group' => (string) ($v['server']['web_group'] ?? ''),
         ],
         'install' => [
-            '_help' => [
-                'deploy: install (empty database), erase (drop what is there - destroys',
-                '  the collection), or keep (configuration only).',
-                'force_erase: erase alone stops to be confirmed. Set this to mean it.',
-                'structure: remote, shipped or none.',
-                'metadata_sources: the default for a source metadata.agents does not name.',
-            ],
             'deploy'           => (string) ($v['install']['deploy'] ?? 'install'),
             'erase_uploads'    => (bool) ($v['install']['erase_uploads'] ?? false),
             'force_erase'      => (bool) ($v['install']['force_erase'] ?? false),
@@ -849,34 +894,19 @@ function answers_export_json(array $v): string
     // added to metadata.php appears here with its own fields and its own
     // homepage, which is the only way a template stays right.
     $agents = [
-        '_help' => [
-            'enable switches a source on. Left out, a free source follows',
-            'install.metadata_sources and one needing an account stays off.',
-            'Credentials with no enable line count as yes.',
-        ],
     ];
     if (function_exists('metadata_provider_types')) {
         foreach (metadata_provider_types() as $type => $def) {
             $keyed = !empty($def['needs_key']);
             $mine  = $v['metadata'][$type] ?? [];
             $entry = [
-                '_help' => (string) ($def['label'] ?? $type)
-                         . ($keyed ? ' - needs an account' : '')
-                         . (isset($def['homepage']) ? ' - ' . (string) $def['homepage'] : ''),
                 'enable' => (bool) ($mine['enable']
                     ?? ($keyed ? false : ($v['install']['metadata_sources'] ?? true))),
             ];
             if ($keyed) {
-                // The labels go in the help line, because a field called
-                // `api_key` does not say "API Read Access Token" and TMDB will
-                // refuse anything else. In the INI file that was the comment
-                // above the line; here there is nowhere else to put it.
-                $labels = [];
                 foreach (($def['credentials'] ?? ['api_key' => ['label' => 'API key']]) as $field => $meta) {
                     $entry[$field] = (string) ($mine[$field] ?? '');
-                    $labels[] = $field . ': ' . (string) ($meta['label'] ?? $field);
                 }
-                $entry['_help'] = [$entry['_help'], implode('. ', $labels) . '.'];
             }
             $agents[(string) $type] = $entry;
         }
@@ -888,6 +918,11 @@ function answers_export_json(array $v): string
 
 /**
  * An answer file, as INI.
+ *
+ * Written with its comments, because a person opening one is about to fill in
+ * four blanks and choose between three words for `deploy` - which is what JSON
+ * cannot carry, and why the JSON writer sends the same guidance to stderr
+ * instead.
  *
  * Kept for the files that already exist and the tools that template them -
  * answers_parse() still reads both, and a provisioning system with an INI
@@ -1042,6 +1077,7 @@ function answers_export(array $v): string
  * provisioning run that fails, is corrected and fails again on the next line is
  * three round trips where one would do.
  */
+
 /**
  * Answers from JSON, laid out as a tree.
  *
@@ -1120,6 +1156,20 @@ function answers_metadata_from(array $agents): array
     $out      = [];
     $problems = [];
 
+    // Whether the definitions are here to check against.
+    //
+    // They are loaded with the rest of the engine, which happens *after* the
+    // answers are read - bin/install.php parses the file to find out whether it
+    // can proceed at all, and only then boots. So this ran with no definitions
+    // and refused every source in the file as "no metadata source called that",
+    // on a file the installer had written itself.
+    //
+    // Not checkable is not the same as wrong. With the definitions absent the
+    // values are carried through untouched and checked where they are used -
+    // installer_enable_metadata_sources() runs after the boot and knows every
+    // source, so a real typo is still caught, one step later.
+    $known = function_exists('metadata_provider_definition');
+
     foreach ($agents as $provider => $fields) {
         // Guidance, not a source. Skipped here rather than by the caller so both
         // formats get it from one place - the INI file cannot carry an `_help`
@@ -1127,14 +1177,21 @@ function answers_metadata_from(array $agents): array
         if (str_starts_with((string) $provider, '_')) {
             continue;
         }
-        $def = function_exists('metadata_provider_definition')
-            ? metadata_provider_definition((string) $provider) : null;
-        if ($def === null) {
-            $problems[] = 'No metadata source called ' . (string) $provider . '.';
-            continue;
-        }
         if (!is_array($fields)) {
             $problems[] = (string) $provider . ' should hold an object.';
+            continue;
+        }
+        if (!$known) {
+            foreach ($fields as $field => $value) {
+                if (!str_starts_with((string) $field, '_')) {
+                    $out[(string) $provider][(string) $field] = $value;
+                }
+            }
+            continue;
+        }
+        $def = metadata_provider_definition((string) $provider);
+        if ($def === null) {
+            $problems[] = 'No metadata source called ' . (string) $provider . '.';
             continue;
         }
         $creds = $def['credentials'] ?? ['api_key' => []];
@@ -1361,13 +1418,6 @@ function web_server_account(string $wantUser = '', string $wantGroup = ''): arra
  *
  * Existing rows are left alone, so running it twice adds nothing.
  *
- * @return int  how many were added
- */
-/**
- * @param array<string, array<string, string>> $credentials
- *        Keyed sources to configure as well, by provider and field.
- */
-/**
  * @param array<string, array<string, mixed>> $settings
  *        Per source: `enable`, and any credentials it needs.
  * @param bool $default
@@ -1383,6 +1433,18 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
 
     $added   = 0;
     $skipped = [];
+
+    // Named in the answer file and not a source this engine has.
+    //
+    // Checked here rather than only when the file is read: the definitions are
+    // loaded after the answers, so a typo passes the parse and would otherwise
+    // be a source that silently never appears. Reported, because somebody wrote
+    // it down expecting it.
+    foreach (array_keys($settings) as $named) {
+        if (metadata_provider_definition((string) $named) === null) {
+            $skipped[(string) $named] = 'there is no metadata source with that name.';
+        }
+    }
 
     foreach (metadata_provider_types() as $type => $def) {
         $keyed = !empty($def['needs_key']);

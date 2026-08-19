@@ -1,5 +1,87 @@
 # Changelog
 
+**Three docblocks stacked on one function, two of them wrong.**
+
+`installer_enable_metadata_sources()` carried its original block, then one
+describing a `$credentials` parameter it no longer takes, then the current one -
+each added by inserting a signature above the last without removing what
+described the old one. A docblock immediately above another documents the comment
+rather than any code, and the stale ones claimed parameters that had gone.
+
+The same had happened to `answers_export_json()`, which was documented as writing
+its own `_help` keys - the behaviour removed in build 161 - while the block
+actually attached to it described something else entirely.
+
+Both collapsed to one block each, saying what the functions now take.
+
+A check reports a one-line docblock directly above another, which is the shape a
+stale one leaves. **Scoped to the installer**: eight more exist across the engine -
+`auth.php` carries the same sentence twice - and every one predates this. Fixing
+those is a tidy-up worth doing on its own rather than folded into an unrelated
+change, and a check failing on eight things nobody is fixing is one that gets
+ignored.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 162**.
+
+**The response file holds settings and nothing else.**
+
+It carried a `_help` array in every section and on every one of the thirteen
+sources - fifteen blocks of prose the parser was required to ignore, in the one
+artifact that is read by a machine. The reasoning was that JSON has no comments
+and the guidance the INI file held was worth keeping. It was worth keeping; it was
+not worth keeping *there*.
+
+`--example` writes the file to standard output and what the settings mean to
+standard error, so:
+
+    php bin/install.php --example > install.json
+
+gives a file a machine can read and a terminal that explains it. Two streams, each
+carrying what it is for.
+
+The guidance is better for having room: it lists every source with its homepage
+and what its credential fields are called, which the per-source help blocks only
+managed one line at a time.
+
+The wizard says the same beside its download button, and `docs/INSTALL.md` - which
+still described an INI file called `.rsp` - now describes what the installer
+actually writes.
+
+**A file with `_help` in it still loads.** Underscore keys are ignored on the way
+in, because files written by the build that wrote them exist.
+
+The example is half the size and all of it configuration.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 161**.
+
+**An answer file the installer wrote, refused by the installer.**
+
+Every source in it came back as "No metadata source called wikidata", and so on
+for all thirteen - on a file `--example` had produced minutes earlier.
+
+The check reads the provider definitions, which are loaded with the rest of the
+engine. `bin/install.php` reads the answers **first**, to find out whether it can
+proceed at all, and boots afterwards - so the check ran with no definitions and
+`function_exists()` was false. Every source was unknown because nothing was
+known.
+
+**Not checkable is not the same as wrong.** With the definitions absent the
+values are carried through untouched, and the check happens where they are used:
+`installer_enable_metadata_sources()` runs after the boot and knows every source,
+so a real typo is still reported - one step later, as something that could not be
+switched on rather than a file that could not be read.
+
+The wizard was unaffected. It loads the engine before it reads anything, which is
+why this only ever appeared on the command line.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 160**.
+
 **RetroVault is gone from the tree.**
 
 Build 158 argued the opposite - that the bundle identifier, the package, the

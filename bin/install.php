@@ -302,7 +302,16 @@ $savePath = '';
 for ($i = 1; $i < $argc; $i++) {
     switch ($argv[$i]) {
         case '--example':
+            // The file on stdout, what it means on stderr - so
+            // `--example > install.json` writes configuration and nothing else,
+            // and the terminal still explains what to fill in.
+            //
+            // The engine is not booted yet, so the source list is added only
+            // when metadata.php happens to be loaded. The four blanks and the
+            // three words for `deploy` are the part somebody needs, and those
+            // need nothing.
             fwrite(STDOUT, answers_export_json(answers_defaults()));
+            fwrite(STDERR, implode("\n", answers_guidance()) . "\n");
             exit(0);
         case '--answers':
         case '-a':
