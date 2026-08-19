@@ -15,10 +15,10 @@ declare(strict_types=1);
  * helpers rather than keeping a second copy of pdo_connect() and config_php()
  * that would drift.
  *
- *   php bin/install.php --example > install.rsp
- *   $EDITOR install.rsp
- *   php bin/install.php --answers install.rsp --dry-run
- *   php bin/install.php --answers install.rsp
+ *   php bin/install.php --example > install.json
+ *   $EDITOR install.json
+ *   php bin/install.php --answers install.json --dry-run
+ *   php bin/install.php --answers install.json
  *
  * Exit status is 0 only if the install finished. Anything else is a failure with
  * a reason on stderr, which is what a provisioning script needs and what a web
@@ -201,7 +201,7 @@ function ask_secret(string $label): string
  * The whole questionnaire, seeded with whatever is already known.
  *
  * `$a` starts as the defaults, or as an answer file if one was given - so
- * `--answers half-filled.rsp --interactive` asks about the gaps and offers the
+ * `--answers half-filled.json --interactive` asks about the gaps and offers the
  * rest for confirmation, which is the useful case rather than an edge one.
  */
 function ask_everything(array $a): array
@@ -302,7 +302,7 @@ $savePath = '';
 for ($i = 1; $i < $argc; $i++) {
     switch ($argv[$i]) {
         case '--example':
-            fwrite(STDOUT, answers_export(answers_defaults()) . "\n");
+            fwrite(STDOUT, answers_export_json(answers_defaults()));
             exit(0);
         case '--answers':
         case '-a':
@@ -343,8 +343,8 @@ for ($i = 1; $i < $argc; $i++) {
 RetroHive installer.
 
   php bin/install.php --interactive
-  php bin/install.php --example > install.rsp
-  php bin/install.php --answers install.rsp [--dry-run] [--force]
+  php bin/install.php --example > install.json
+  php bin/install.php --answers install.json [--dry-run] [--force]
 
   --interactive   ask the questions instead of reading a file
   --example       print an answer file to start from
@@ -357,7 +357,7 @@ RetroHive installer.
 Without a file at all:
 
   php bin/install.php --interactive
-  php bin/install.php --interactive --save-answers install.rsp
+  php bin/install.php --interactive --save-answers install.json
 
 --answers and --interactive combine: the file fills in what it knows and the
 questions cover the rest.
@@ -365,7 +365,7 @@ questions cover the rest.
 Silent, for a provisioning run:
 
   RETROVAULT_DB_PASS=... RETROVAULT_ADMIN_PASS=... \
-    php bin/install.php --answers install.rsp --quiet || handle-failure
+    php bin/install.php --answers install.json --quiet || handle-failure
 
 RETROVAULT_DB_PASS and RETROVAULT_ADMIN_PASS override db.pass and
 admin.password, so the answer file can be templated and hold no secret. Or pipe
@@ -618,7 +618,13 @@ if ($a['install']['structure'] !== 'none') {
 // an instance built from a response file came up with nothing to look titles up
 // with, and no sign that it was meant to have any.
 if ($a['install']['metadata_sources']) {
-    $sources = installer_enable_metadata_sources();
+    // metadata_sources is the default for a source [metadata] does not name -
+    // not a gate in front of it, or naming one would have no effect on a file
+    // that had switched the rest off.
+    $sources = installer_enable_metadata_sources(
+        $a['metadata'] ?? [],
+        (bool) ($a['install']['metadata_sources'] ?? true)
+    );
     say($sources['added'] > 0
         ? sprintf('Metadata sources switched on: %d, the ones needing no key that answered',
                   $sources['added'])
@@ -661,7 +667,7 @@ if ($a['install']['deploy'] !== 'keep') {
 if ($savePath !== '') {
     // Through answers_export(), so what comes out is what the wizard hands you:
     // every credential a placeholder, everything else as it was answered.
-    if (@file_put_contents($savePath, answers_export($a)) === false) {
+    if (@file_put_contents($savePath, answers_export_json($a)) === false) {
         say('WARNING could not write ' . $savePath);
     } else {
         @chmod($savePath, 0600);

@@ -1,5 +1,130 @@
 # Changelog
 
+**The answer file is JSON, as a tree.**
+
+    "metadata": {
+      "agents": {
+        "theaudiodb": {
+          "_help": ["TheAudioDB - needs an account - https://www.theaudiodb.com/",
+                    "api_key: API key (123 for the free test key)."],
+          "enable": true,
+          "api_key": "123"
+        }
+      }
+    }
+
+A tree rather than a flat list of dotted keys, because that is what the thing is:
+sections, and under metadata, one object per source with its own settings in it.
+
+## INI is still read
+
+Files written by an earlier version exist, and a provisioning tool that templates
+one should not break on an upgrade. The format is chosen by what the file looks
+like rather than by what it is called - the wizard takes an upload and a
+provisioning tool pipes to standard input, and neither has a filename worth
+trusting.
+
+Both go through **one** check for the metadata agents, so "igdb has no setting
+called client_di" is the same answer whichever way the file was written. Two
+copies of that check is one that gets fixed and one that does not.
+
+## JSON has no comments
+
+The INI file's were doing real work: somebody opening it is about to choose
+between three words for `deploy`, and a credential field called `api_key` does
+not say "API Read Access Token" - which is what TMDB wants and the only thing it
+will accept.
+
+They are kept as `_help` keys, which the parser ignores. An explanation that
+survives as data is better than one dropped because the format has no place for
+it.
+
+## Named errors
+
+`metadata.sources` is refused with "the sources go under agents" rather than as an
+unknown section - a wrong guess at the nesting is the mistake this shape invites,
+and the answer should say where the thing actually goes.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 157**.
+
+**Every lookup source is switched on individually.**
+
+`metadata_sources = 1` was one flag for eight sources: all the ones needing no
+account, or none of them. The answer file now lists every source, free and keyed
+alike:
+
+    ; Wikipedia - https://en.wikipedia.org/
+    wikipedia.enable = true
+
+    ; IGDB - needs an account - https://api-docs.igdb.com/#getting-started
+    igdb.enable = true
+    ; Client ID
+    igdb.client_id = ...
+    ; Client secret
+    igdb.api_key = ...
+
+Written from the provider definitions, so a source added later appears with its
+own name, its own fields and its own homepage.
+
+## The old flag still means something
+
+`metadata_sources` is the **default for a source [metadata] does not name**,
+rather than a gate in front of it - an answer file with no [metadata] section
+behaves exactly as before, and one that switches the general flag off and names a
+single source gets that source. Gating would have dropped it.
+
+**A keyed source falls back to off**, not to that default. "Switch on the lookup
+sources" has always meant the ones needing no account, and reading it as "all of
+them" would report four failures on every install that never mentioned them.
+
+## Credentials with no flag count as yes
+
+Somebody who has pasted an API key has said what they want as plainly as a flag
+would. Making them write a second line to mean it is a trap that fails silently,
+and a silent nothing is the worst answer an installer can give. An explicit
+`enable = false` still wins.
+
+**A source asked for and not given its credentials is reported** - by flag or by
+half a pair. One that was never mentioned stays silent, because then it is simply
+one this instance does not use.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 156**.
+
+**Metadata sources with credentials can be configured at install time.**
+
+The keyed sources - TheGamesDB, TMDB, TheTVDB, TheAudioDB and IGDB - were left
+out of an unattended install and added by hand afterwards. The answer file has a
+`[metadata]` section now: give a source its credentials and it is switched on
+with the free ones.
+
+**Written from the provider definitions**, not from a copy of them. A source
+added to `metadata.php` appears in the next answer file with its own field names,
+its own labels and its own homepage - which is the only way a template stays
+right. IGDB's two fields come out as two lines because IGDB declares two.
+
+**A blank is not a failure.** A source with no credentials is skipped silently:
+that is "I do not have an account for this", not something that went wrong. Half
+a credential pair *is* reported - a source with a client id and no secret fails on
+its first lookup, which is a worse place to find out than during the install.
+
+**Keyed sources are probed like the free ones**, with their credentials in hand,
+so a wrong key is reported while somebody is still watching rather than months
+later by a lookup that half works.
+
+## The parser still refuses a typo
+
+`[metadata]` accepts keys the schema cannot list, since the providers are declared
+elsewhere - so they are checked against the definitions instead. `igdb.client_di`
+is refused by name, and so is a source that does not exist.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 155**.
+
 **Uploading a photograph returned 500. `$item` was never assigned.**
 
 `api_item_images_upload()` passed `$item` to `api_hold_new_images()`, which is

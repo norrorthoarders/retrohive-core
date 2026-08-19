@@ -545,9 +545,9 @@ if (($_GET['download'] ?? '') === 'answers') {
         http_response_code(404);
         exit('Nothing to write. Work through the installer first.');
     }
-    $body = answers_export(answers_from_session());
+    $body = answers_export_json(answers_from_session());
     header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="retrohive-install.rsp"');
+    header('Content-Disposition: attachment; filename="retrohive-install.json"');
     header('Content-Length: ' . strlen($body));
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
@@ -703,6 +703,11 @@ if ($step === 1 && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['preset
                 'delete_installer'   => (bool) $answers['install']['delete_installer'],
                 'sign_in'            => (bool) $answers['install']['sign_in'],
                 'metadata_sources'   => (bool) $answers['install']['metadata_sources'],
+                // The keyed sources' credentials, as given. Kept whole rather
+                // than flattened into one remembered key per field: the shape
+                // is what installer_enable_metadata_sources() takes, and
+                // unpacking and repacking it is two places to lose a field.
+                'metadata'           => $answers['metadata'] ?? [],
             ]);
             // Credentials only if the file actually carried them - which it does
             // when the environment filled the placeholders in, and does not when
@@ -893,7 +898,7 @@ if ($step === 1) {
             </ul>
           <?php endif; ?>
 
-          <input type="file" name="answers" id="rv-file" accept=".rsp,.ini,text/plain"
+          <input type="file" name="answers" id="rv-file" accept=".json,.rsp,.ini,application/json,text/plain"
                  style="display:block;margin:.7rem auto 0">
           <noscript><button class="btn" type="submit" style="margin-top:.6rem">Use it</button></noscript>
         </div>
@@ -1753,13 +1758,22 @@ if ($running) {
                     // catalogue could look up nothing until somebody went to the
                     // agents screen and added them one at a time. These are the
                     // ones that ask for nothing: no account, no key, no terms to
-                    // agree to. IGDB and TheGamesDB are left out because they
-                    // need credentials somebody has to go and get.
+                    // agree to.
+                    //
+                    // Keyed sources join them when an answer file supplied
+                    // credentials - a source with none is skipped silently,
+                    // because a blank is "I do not have an account for this"
+                    // rather than a failure.
                     // Shared with bin/install.php, which used to skip this
                     // entirely - see installer_enable_metadata_sources().
-                    $sources = (string) recall('metadata_sources', '1') === '1'
-                        ? installer_enable_metadata_sources()
-                        : ['added' => 0, 'skipped' => []];
+                    // metadata_sources is the default for a source [metadata]
+                    // does not name, not a gate in front of it - a file that
+                    // switched the general flag off and named one source by hand
+                    // means that one, and gating would have dropped it.
+                    $sources = installer_enable_metadata_sources(
+                        recall('metadata', []) ?: [],
+                        (string) recall('metadata_sources', '1') === '1'
+                    );
                     if ($sources['added'] > 0) {
                         $log[] = sprintf(
                             'Metadata sources configured: %d, the ones needing no key that answered',
