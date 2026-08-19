@@ -1,5 +1,34 @@
 # Changelog
 
+**RetroVault is gone from the tree.**
+
+Build 158 argued the opposite - that the bundle identifier, the package, the
+keychain service and the installer's environment variables were addresses rather
+than names, and that moving them was a migration with a compatibility window
+rather than a rename. That reasoning was right about what a migration costs and
+wrong about whether one was needed: this instance is redeployed from scratch, so
+there is nothing on the far side of the window to be compatible with.
+
+Everything now carries the one name:
+
+* `se.retrohive.app` and `nu.noh.retrohive` - the bundle identifier and the
+  Android package, and the `nu.noh.retrohive.ui.Icon*` launcher aliases with them.
+* `se.retrohive.token`, and the Android preferences and token store.
+* `RETROHIVE_DB_PASS` and `RETROHIVE_ADMIN_PASS`.
+* The iOS sources, the entitlements, the app file and the SPM target.
+
+**A deployment carrying the old environment variables will install with no
+password.** That is the compatibility window the previous build was protecting,
+deliberately given up: nothing reads `RETROVAULT_DB_PASS` any more, and an
+install that relied on it stops rather than proceeding with a blank.
+
+`docs/NAMING.md` is deleted. It existed to explain why the old name was still
+here, and it is not.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 159**.
+
 **The answer file is JSON, as a tree.**
 
     "metadata": {
@@ -4640,19 +4669,19 @@ was run after each individual change, not just once at the end.
 entry below. Every reference across all five repositories updated to match: this repo's own local
 directory, `retrohive-tools/projects.json` (the single source of truth `publish-all.sh` reads),
 its `--tag`/`--label` logic (which decided whether to tag the server by comparing against the
-literal string `"retrovault"` — found and fixed before it could silently mis-tag a release), the
+literal string `"retrohive"` — found and fixed before it could silently mis-tag a release), the
 test suite's sibling-directory auto-detection in `bin/testdb.sh`, and the example database
 name/username in `src/config.local.php.example`.
 
 **Operational step this leaves on the real server, not automated here**: the existing checkout at
-`/srv/www/vhosts/retrovault.noh.nu` still has its git `origin` pointed at the old
-`retrovault.git` URL. The next full `refresh-retrovault.sh` run self-heals this — it does a
+`/srv/www/vhosts/retrohive.noh.nu` still has its git `origin` pointed at the old
+`retrohive.git` URL. The next full `refresh-retrohive.sh` run self-heals this — it does a
 `rm -Rf` and fresh clone from the new URL — but a plain `git pull` against the existing checkout,
-run before that, will fail against a remote that still thinks it's named `retrovault`. Run the
+run before that, will fail against a remote that still thinks it's named `retrohive`. Run the
 full refresh script once, not a bare pull, the first time after this change.
 
 **Found while investigating this, unrelated to today's specific request**: `retrohive-tools/tests/copy.php`
-was still asserting the update-check URL contained `norrorthoarders/retrovault/releases/latest`,
+was still asserting the update-check URL contained `norrorthoarders/retrohive/releases/latest`,
 even though the real source already said `retrohive` — a stale assertion left over from an
 earlier round's GitHub-org rename, silently wrong until this pass caught it.
 
@@ -4660,11 +4689,11 @@ Verified live: ran `bin/testdb.sh` with `RV_APP_ROOT` unset, relying entirely on
 auto-detection to find the renamed directory, then the full suite the same way. Same pre-existing
 8-of-25 baseline as every other round tonight.
 
-**Every user-facing "RetroVault" is now "RetroHive"** — config defaults (`app_name`,
+**Every user-facing "RetroHive" is now "RetroHive"** — config defaults (`app_name`,
 `smtp_from_name`, the SMTP from-address), the entire web and CLI installer, account and
 notification emails, both User-Agent strings sent to external APIs, `docs/openapi.yaml`'s
 title, and every code comment describing the product generically. Deliberately left alone: the
-GitLab repository name (`retrovault`, matching the live deploy pipeline) and every internal code
+GitLab repository name (`retrohive`, matching the live deploy pipeline) and every internal code
 identifier — table names, function names, the directory this repo lives in.
 
 Verified live, not assumed: booted the app with no `app_name` override and confirmed the actual
@@ -4700,7 +4729,7 @@ before it finally came back empty, and only then was any of this trusted.
 
 **Operational note**: the `.rsp` answer-file format changed. `[install] templates = remote` is
 now `[install] structure = remote` - the deployed server's real response file at
-`/srv/www/vhosts/retrovault-install.rsp` needs that one line updated before the next install run
+`/srv/www/vhosts/retrohive-install.rsp` needs that one line updated before the next install run
 that uses it.
 
 **Verified live**, not just linted: `bin/testdb.sh` reports "structure data loaded" on a real
@@ -4820,7 +4849,7 @@ First public release.
   one by upload, and `require` on an uploaded file is remote code execution wearing a hat. One
   definition, in `public/install.php`, used by both installers.
 - `--quiet` now says nothing at all when it works, with the reason on stderr and a non-zero
-  status when it does not. `RETROVAULT_DB_PASS` and `RETROVAULT_ADMIN_PASS` override the two
+  status when it does not. `RETROHIVE_DB_PASS` and `RETROHIVE_ADMIN_PASS` override the two
   passwords so the answer file can be templated and hold no secret, and `--answers -` reads it
   from standard input so it need not exist on disk.
 
@@ -4840,7 +4869,7 @@ First public release.
   Lending was removed earlier tonight; this one entry was missed because nothing triggered it, so
   it never surfaced as broken — only as unused. Removed, and its slot in `notification_kinds()`
   taken by the new registration kind rather than left as a gap.
-- **A test in `retrovault-tools` still referenced the removed kind** and only failed once the
+- **A test in `retrohive-tools` still referenced the removed kind** and only failed once the
   full suite ran after this change — a reminder that a single file's suite passing is not the
   same question as the whole tree agreeing with itself. Updated to exercise the same preference
   logic against `registration.pending` instead.

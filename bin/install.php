@@ -364,10 +364,10 @@ questions cover the rest.
 
 Silent, for a provisioning run:
 
-  RETROVAULT_DB_PASS=... RETROVAULT_ADMIN_PASS=... \
+  RETROHIVE_DB_PASS=... RETROHIVE_ADMIN_PASS=... \
     php bin/install.php --answers install.json --quiet || handle-failure
 
-RETROVAULT_DB_PASS and RETROVAULT_ADMIN_PASS override db.pass and
+RETROHIVE_DB_PASS and RETROHIVE_ADMIN_PASS override db.pass and
 admin.password, so the answer file can be templated and hold no secret. Or pipe
 the whole thing in and leave nothing on disk:
 
@@ -464,7 +464,7 @@ if ($dryRun) {
 }
 
 if ($a['install']['deploy'] === 'erase') {
-    drop_retrovault_tables($pdo);
+    drop_retrohive_tables($pdo);
     say('Existing structure dropped');
     if ($a['install']['erase_uploads']) {
         $purge = purge_uploads();

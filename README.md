@@ -4,7 +4,9 @@ A self-hosted catalogue for a retro computing collection. PHP 8.3, MariaDB, no b
 JavaScript framework. GPL v3.0.
 
 Renamed from RetroVault, on GitLab and GitHub alike — see `CHANGELOG.md` for what that took and
-the one manual step it left on the live server.
+the one manual step it left on the live server. The rename is complete: nothing in the tree carries
+the old name, including the bundle identifiers, the package, the keychain service and the installer's
+environment variables.
 
 ## Clients
 

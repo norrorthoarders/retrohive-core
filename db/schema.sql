@@ -1,4 +1,4 @@
--- RetroVault :: schema
+-- RetroHive :: schema
 -- MariaDB 10.6+ / MySQL 8+
 -- Charset utf8mb4 throughout so Scandinavian and Japanese titles survive.
 --
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS auth_methods (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO auth_methods (id, type, name, description, is_enabled, is_protected, sort_order)
-VALUES (1, 'local', 'Local database', 'Passwords stored and verified by RetroVault itself.', 1, 1, 0);
+VALUES (1, 'local', 'Local database', 'Passwords stored and verified by RetroHive itself.', 1, 1, 0);
 
 CREATE TABLE IF NOT EXISTS users (
   id            INT UNSIGNED NOT NULL AUTO_INCREMENT,

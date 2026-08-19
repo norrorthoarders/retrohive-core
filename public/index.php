@@ -67,7 +67,7 @@ if (config('debug')) {
     ini_set('display_errors', '0');
     error_reporting(E_ALL & ~E_DEPRECATED);
     set_exception_handler(function (Throwable $e): void {
-        crash_page(retrovault_record_crash($e, 'error.uncaught'));
+        crash_page(retrohive_record_crash($e, 'error.uncaught'));
     });
 
     // Fatals do not reach an exception handler.
@@ -82,7 +82,7 @@ if (config('debug')) {
                 [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
             return;
         }
-        $ref = retrovault_record_crash(
+        $ref = retrohive_record_crash(
             new ErrorException((string) $last['message'], 0, (int) $last['type'],
                                (string) $last['file'], (int) $last['line']),
             'error.fatal');

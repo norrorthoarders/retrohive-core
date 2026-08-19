@@ -17,8 +17,8 @@
  * same thing. A flash rendered into the container on page load and a toast raised by
  * script after a save that never reloads are the same object with the same behaviour.
  *
- *   RetroVault.notify('Order saved.')            - a success, fades on its own
- *   RetroVault.notify('That did not save', 'error')  - stays until dismissed
+ *   RetroHive.notify('Order saved.')            - a success, fades on its own
+ *   RetroHive.notify('That did not save', 'error')  - stays until dismissed
  *
  * Errors do not auto-dismiss: missing "Saved." costs nothing, missing "That did not
  * save" costs the work. Everything is dismissable by hand either way, and with no
@@ -94,6 +94,6 @@
     if (btn) { dismiss(btn.closest('.toast')); }
   });
 
-  window.RetroVault = window.RetroVault || {};
-  window.RetroVault.notify = notify;
+  window.RetroHive = window.RetroHive || {};
+  window.RetroHive.notify = notify;
 })();

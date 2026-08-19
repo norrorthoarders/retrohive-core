@@ -1552,7 +1552,7 @@ if ($running) {
         if ($plan['deploy'] === 'erase') {
             $before = existing_data_counts($pdo);
             $pdo->exec('DROP TABLE IF EXISTS schema_migrations');
-            $dropErrors = drop_retrovault_tables($pdo);
+            $dropErrors = drop_retrohive_tables($pdo);
             if ($dropErrors !== []) {
                 throw new RuntimeException('Some tables could not be dropped: '
                     . implode(' | ', array_slice($dropErrors, 0, 3)));

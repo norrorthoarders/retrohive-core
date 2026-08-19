@@ -168,7 +168,7 @@ reason none of the credentials are in it.
 **No username or password is ever written into it.** Those come out as
 `change-database-user-here` and friends, and a file still carrying one is refused
 rather than installed with a database user by that name. Fill them in, or leave
-them and set `RETROVAULT_DB_PASS` and `RETROVAULT_ADMIN_PASS` in the environment.
+them and set `RETROHIVE_DB_PASS` and `RETROHIVE_ADMIN_PASS` in the environment.
 
 What it holds:
 
@@ -257,11 +257,11 @@ wrong one happens.
 is non-zero when it does not, so a run is either invisible or explained:
 
 ```
-RETROVAULT_DB_PASS=... RETROVAULT_ADMIN_PASS=... \
+RETROHIVE_DB_PASS=... RETROHIVE_ADMIN_PASS=... \
   php bin/install.php --answers install.rsp --quiet || exit 1
 ```
 
-`RETROVAULT_DB_PASS` and `RETROVAULT_ADMIN_PASS` override `db.pass` and
+`RETROHIVE_DB_PASS` and `RETROHIVE_ADMIN_PASS` override `db.pass` and
 `admin.password`. The environment wins over the file because it is the more
 specific of the two — a file is written once, an environment is set per run — and
 because it lets the answer file be templated, committed and hold no secret.

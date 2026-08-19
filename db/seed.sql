@@ -1,4 +1,4 @@
--- RetroVault :: core taxonomy
+-- RetroHive :: core taxonomy
 -- Safe to re-run: every insert is INSERT IGNORE keyed on slug.
 
 SET NAMES utf8mb4;

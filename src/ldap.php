@@ -1023,7 +1023,7 @@ function ldap_sync_user(array $method, array $directoryUser, bool $adopting = fa
 
     // Memberships are memoised per request; this account's just changed.
     $GLOBALS['__membership_cache'] = [];
-    unset($GLOBALS['retrovault_access_cache']);
+    unset($GLOBALS['retrohive_access_cache']);
 
     return one('SELECT * FROM users WHERE id = ?', [$userId]);
 }

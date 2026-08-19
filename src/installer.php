@@ -462,7 +462,7 @@ function structure_present(PDO $pdo): bool
  * Deliberately not DROP DATABASE: the account may not have that right, and the
  * database may be shared with something else.
  */
-function drop_retrovault_tables(PDO $pdo): array
+function drop_retrohive_tables(PDO $pdo): array
 {
     $errors  = [];
     $objects = schema_objects();
@@ -493,7 +493,7 @@ function drop_retrovault_tables(PDO $pdo): array
         // Anything of ours still standing. Dropping only a fixed list means a
         // table added since the list was written survives a "total reinstall"
         // and quietly poisons the next one, so check rather than assume.
-        $left = leftover_retrovault_objects($pdo, $objects);
+        $left = leftover_retrohive_objects($pdo, $objects);
         foreach ($left as $name) {
             try {
                 $pdo->exec("DROP TABLE IF EXISTS `$name`");
@@ -515,7 +515,7 @@ function drop_retrovault_tables(PDO $pdo): array
  * anything else living here is untouched, and somebody pointing RetroHive at a
  * shared database should be able to believe that.
  */
-function leftover_retrovault_objects(PDO $pdo, array $objects): array
+function leftover_retrohive_objects(PDO $pdo, array $objects): array
 {
     $known = array_map('strtolower', array_merge($objects['tables'], $objects['views']));
     if ($known === []) {
@@ -793,7 +793,7 @@ function answers_export_json(array $v): string
             '    php bin/install.php --answers this-file.json',
             'The web installer takes it too, on its first page.',
             'Keys beginning with an underscore are ignored.',
-            'RETROVAULT_DB_PASS and RETROVAULT_ADMIN_PASS override the two passwords,',
+            'RETROHIVE_DB_PASS and RETROHIVE_ADMIN_PASS override the two passwords,',
             'which keeps them out of this file for good.',
         ],
         'db' => [
@@ -919,7 +919,7 @@ function answers_export(array $v): string
     $lines[] = '; The web installer takes it too, on its first page.';
     $lines[] = ';';
     $lines[] = '; No password or username was saved. Replace every change-...-here below, or';
-    $lines[] = '; leave them and set RETROVAULT_DB_PASS and RETROVAULT_ADMIN_PASS in the';
+    $lines[] = '; leave them and set RETROHIVE_DB_PASS and RETROHIVE_ADMIN_PASS in the';
     $lines[] = '; environment instead, which keeps the secrets out of the file for good.';
     $lines[] = '';
     $lines[] = '[db]';
@@ -1166,8 +1166,8 @@ function answers_metadata_from(array $agents): array
  */
 function answers_apply_environment(array &$out): void
 {
-    foreach ([['RETROVAULT_DB_PASS', 'db', 'pass'],
-              ['RETROVAULT_ADMIN_PASS', 'admin', 'password']] as [$var, $group, $field]) {
+    foreach ([['RETROHIVE_DB_PASS', 'db', 'pass'],
+              ['RETROHIVE_ADMIN_PASS', 'admin', 'password']] as [$var, $group, $field]) {
         $fromEnv = getenv($var);
         if ($fromEnv !== false && $fromEnv !== '') {
             $out[$group][$field] = $fromEnv;

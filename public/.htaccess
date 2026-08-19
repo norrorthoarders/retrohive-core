@@ -1,4 +1,4 @@
-# RetroVault - route everything through the front controller.
+# RetroHive - route everything through the front controller.
 # Requires mod_rewrite and "AllowOverride All" on this directory.
 
 <IfModule mod_rewrite.c>

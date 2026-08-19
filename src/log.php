@@ -410,7 +410,7 @@ function logfile_problem(): ?string
  *
  * @return ?int the log entry's id, for showing on the page
  */
-function retrovault_record_crash(Throwable $e, string $event = 'error.uncaught'): ?int
+function retrohive_record_crash(Throwable $e, string $event = 'error.uncaught'): ?int
 {
     $where = $e->getFile() . ':' . $e->getLine();
     error_log('[retrohive] ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . $where);
