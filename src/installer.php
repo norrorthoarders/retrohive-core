@@ -903,10 +903,25 @@ function answers_export_json(array $v): string
                 'enable' => (bool) ($mine['enable']
                     ?? ($keyed ? false : ($v['install']['metadata_sources'] ?? true))),
             ];
-            if ($keyed) {
-                foreach (($def['credentials'] ?? ['api_key' => ['label' => 'API key']]) as $field => $meta) {
-                    $entry[$field] = (string) ($mine[$field] ?? '');
+            // The credentials, and any other blank a source cannot run without.
+            //
+            // MusicBrainz needs no account and still needs a contact address -
+            // their terms require one in every request - and it lives in
+            // `params` rather than `credentials`. Writing only the credentials
+            // left it with no line in the file and no way to be told.
+            //
+            // Blanks only: an endpoint and a timeout already have working values
+            // and putting them in every file would be settings nobody needs
+            // beside the four that matter. They are still *accepted*, for
+            // somebody pointing a source at a mirror.
+            foreach (($def['credentials'] ?? []) as $field => $meta) {
+                $entry[(string) $field] = (string) ($mine[$field] ?? '');
+            }
+            foreach (($def['requires'] ?? []) as $field) {
+                if (array_key_exists($field, $entry)) {
+                    continue;
                 }
+                $entry[(string) $field] = (string) ($mine[$field] ?? '');
             }
             $agents[(string) $type] = $entry;
         }
@@ -1194,7 +1209,19 @@ function answers_metadata_from(array $agents): array
             $problems[] = 'No metadata source called ' . (string) $provider . '.';
             continue;
         }
-        $creds = $def['credentials'] ?? ['api_key' => []];
+        // Credentials, and anything else the source declares.
+        //
+        // `credentials` is the subset that is secret; `params` is everything it
+        // is configured with. MusicBrainz needs neither an account nor a key and
+        // still cannot run without one: their terms require a real contact
+        // address in every request, and it was declared in `params` where an
+        // answer file had no way to reach it. It was switched on and failed its
+        // own probe on every install.
+        //
+        // Endpoints and timeouts are in there too, and somebody who wants to
+        // point a source at a mirror should be able to say so.
+        $settable = array_keys(($def['credentials'] ?? ['api_key' => []]))
+                  + array_keys($def['params'] ?? []);
         foreach ($fields as $field => $value) {
             if (str_starts_with((string) $field, '_')) {
                 continue;
@@ -1203,7 +1230,7 @@ function answers_metadata_from(array $agents): array
                 $out[(string) $provider]['enable'] = $value;
                 continue;
             }
-            if (!array_key_exists($field, $creds)) {
+            if (!in_array((string) $field, $settable, true)) {
                 $problems[] = (string) $provider . ' has no setting called ' . (string) $field . '.';
                 continue;
             }
@@ -1471,6 +1498,30 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
             continue;
         }
 
+        // A blank a source cannot run without.
+        //
+        // MusicBrainz needs a contact address by their own terms and no account
+        // at all, so it is not "keyed" and was switched on unconditionally -
+        // then failed its own probe on every install, saying so in a sentence
+        // nobody had been given a way to act on.
+        //
+        // Skipped with the reason instead. It is switched on the moment the
+        // field is filled in.
+        // Named by the source, not inferred from a blank default: TheTVDB's
+        // `pin` and TheRetroWeb's `manufacturers` are blank and optional, and
+        // guessing would skip two sources that work.
+        $blanks = [];
+        foreach (($def['requires'] ?? []) as $field) {
+            if (trim((string) ($mine[$field] ?? '')) === '') {
+                $blanks[] = (string) $field;
+            }
+        }
+        if ($blanks !== []) {
+            $skipped[(string) ($def['label'] ?? $type)] =
+                'needs ' . implode(' and ', $blanks) . ', which is blank in the answers.';
+            continue;
+        }
+
         // Every field it declares, or none.
         //
         // Silent when nothing was given and the source was not asked for by
@@ -1510,7 +1561,13 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
         // The credentials go into params, which is where metadata_search() reads
         // them from - so a keyed source is probed with its key rather than
         // probed bare and reported as broken.
-        $params = ($def['params'] ?? []) + $given;
+        //
+        // `array_merge`, not `+`. Every provider declares its credential fields
+        // in `params` with an empty default - `'api_key' => ''` - and the union
+        // operator keeps the *left* side where a key exists in both. So a real
+        // key lost to the blank beside it, and a source configured correctly was
+        // probed with nothing and reported as "no API key configured".
+        $params = array_merge($def['params'] ?? [], $given);
 
         $probe = metadata_search(
             ['id' => 0, 'type' => (string) $type,

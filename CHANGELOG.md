@@ -1,5 +1,44 @@
 # Changelog
 
+**Every keyed source was probed with an empty key.**
+
+An install with all five credentials filled in reported "TheGamesDB: no API key
+configured", and the same for TMDB, TheTVDB and IGDB - on a file that had them.
+
+`$params = ($def['params'] ?? []) + $given;`
+
+Every provider declares its credential fields in `params` with an empty
+default - `'api_key' => ''` - and PHP's union operator keeps the **left** side
+where a key exists in both. So the blank default won over the real key every
+time, and each source was probed with nothing and reported as unconfigured.
+
+`array_merge` takes the right side, which is the one that was given.
+
+## A source can need something that is not a credential
+
+MusicBrainz needs no account and cannot run without a contact address: their own
+terms require a real one in every request. It lived in `params`, which an answer
+file had no way to reach - so it was switched on unconditionally and failed its
+own probe on every install, with a sentence nobody had been given a way to act
+on.
+
+The answer file offers it now, and a source whose requirement is blank is
+**skipped with the reason** rather than switched on and left to fail.
+
+**Named by the source, not inferred from a blank default.** TheTVDB's `pin` and
+TheRetroWeb's `manufacturers` are blank too and genuinely optional - TheTVDB's
+own documentation says an unwanted pin should be left out rather than sent
+empty - so "blank means required" would have skipped two sources that work
+perfectly. `metadata.php` declares what a source cannot do without; the installer
+reads that.
+
+Anything else a source declares is still accepted, for somebody pointing one at a
+mirror.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 163**.
+
 **Three docblocks stacked on one function, two of them wrong.**
 
 `installer_enable_metadata_sources()` carried its original block, then one

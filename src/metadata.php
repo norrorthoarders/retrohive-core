@@ -442,6 +442,18 @@ function metadata_provider_types(): array
                 'contact'  => '',
                 'timeout'  => 15,
             ],
+            // Required, and not a credential.
+            //
+            // MusicBrainz needs no account and cannot run without a contact
+            // address: their own terms require a real one in every request, and
+            // the search refuses without it.
+            //
+            // Named rather than inferred from the blank default. TheTVDB's `pin`
+            // and TheRetroWeb's `manufacturers` are blank too and genuinely
+            // optional - TheTVDB's docs say an unwanted pin should be left out
+            // rather than sent empty - so "blank means required" would skip two
+            // sources that work perfectly.
+            'requires' => ['contact'],
         ],
         'igdb' => [
             'label'     => 'IGDB',
