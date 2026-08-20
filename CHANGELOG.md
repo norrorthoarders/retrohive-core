@@ -1,5 +1,37 @@
 # Changelog
 
+**The lookup tool could not make a request.**
+
+    Error: Undefined constant "APP_VERSION"
+
+`metadata.php` builds a User-Agent from it, and `bin/lookup.php` loaded that unit
+without `src/version.php`. Every fetch the tool made died on the constant.
+
+It died **inside** the request, which is why it read as the source being broken
+rather than the tool being incomplete - and the one path that would have shown it
+is the one nobody runs until there is something to debug. The tool has existed
+for a while; the trace is what finally made somebody use it against a live
+source.
+
+## The check
+
+Which units define which constants, which units read them, and whether a tool
+that loads the second also loads the first. `bin/install.php` names its
+seventeen units in a list rather than one require each, and that list is read
+too.
+
+**The first version reported that installer as broken in three places.** It read
+the list from `as $unit` onwards - and the list is *before* that - so a tool
+loading everything correctly looked like one loading three units wrongly. The
+foreach header is the thing to match.
+
+Tested by taking the require back out and watching it name the file, the unit and
+the constant.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 180**.
+
 **`--platform` was ignored unless `--all` was also given.**
 
     ./bin/lookup.php --trace --source=pricecharting --platform=pc Doom

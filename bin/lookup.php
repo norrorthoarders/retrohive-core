@@ -35,6 +35,13 @@ require APP_ROOT . '/src/proxy.php';
 // work without a database, which is often the state somebody is in when they
 // reach for this.
 require APP_ROOT . '/src/db.php';
+// Before metadata.php, which builds a User-Agent out of APP_VERSION.
+//
+// Without it every fetch this tool made died on an undefined constant - and it
+// died inside the request, so the failure read as the source being broken rather
+// than the tool being incomplete. The one path that never exercised it was the
+// one nobody ran until there was something to debug.
+require APP_ROOT . '/src/version.php';
 require APP_ROOT . '/src/metadata.php';
 
 // ---------------------------------------------------------------------------
