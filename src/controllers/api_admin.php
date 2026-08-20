@@ -254,6 +254,39 @@ function api_settings_show(): void
  * host and a bad port used to be worth half applying; it is not, because the half
  * that applied is the half nobody was told about.
  */
+/**
+ * What a dollar has been worth, most recent first.
+ *
+ * Every currency the instance has a rate for, and when it was last taken - so
+ * "why is this still in dollars" has an answer on a page rather than in a log.
+ */
+function api_exchange_rates_index(): void
+{
+    api_require_admin();
+
+    api_ok(all(
+        'SELECT quote, rate, observed_on, source
+           FROM exchange_rates r
+          WHERE base = ?
+            AND observed_on = (SELECT MAX(observed_on) FROM exchange_rates
+                                WHERE base = r.base AND quote = r.quote)
+       ORDER BY quote',
+        ['USD']
+    ), ['display_currency' => display_currency()]);
+}
+
+/** Fetch today's rates. */
+function api_exchange_rates_refresh(): void
+{
+    api_require_admin();
+
+    $out = exchange_rates_refresh();
+    if ($out['error'] !== null) {
+        api_error('upstream_failed', $out['error'], 502);
+    }
+    api_ok(['written' => $out['written']]);
+}
+
 function api_settings_update(): void
 {
     api_require_admin();

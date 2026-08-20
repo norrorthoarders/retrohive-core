@@ -45,6 +45,16 @@ function settings_schema(): array
                     'default' => 'RetroHive',
                     'max'     => 120,
                 ],
+                'display_currency' => [
+                    'kind'    => 'text',
+                    'label'   => 'Currency',
+                    'help'    => 'Three letters - SEK, NOK, GBP, EUR. Prices come from markets '
+                               . 'that quote in dollars and are converted for display, at the rate '
+                               . 'for the day each one was observed. An amount with no rate to '
+                               . 'convert by is shown in dollars and says so.',
+                    'default' => '',
+                    'max'     => 3,
+                ],
                 'client_url' => [
                     'kind'  => 'url',
                     'label' => 'Where people go',

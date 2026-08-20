@@ -1,5 +1,303 @@
 # Changelog
 
+**What was paid, in the money the rest of the page is in.**
+
+An entry records what somebody paid and the currency they paid in - which is
+their own money, not the dollars a market quotes. So converting it means going
+through the dollar: kronor to dollars, dollars to pounds.
+
+**Both legs are required.** Half a chain is not half an answer, and inventing the
+missing leg would put a confident wrong number on a page. An amount with no route
+stays as it was recorded.
+
+At the rate for the day it was bought, so "I paid this, it is worth that" is two
+figures in one money and neither has been moved by a rate that changed since.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 205**.
+
+**Prices in the money somebody actually spends.**
+
+The markets these prices come from quote in dollars. A shelf in Sweden is not
+priced in dollars, and the instance already had a `currency` in its config that
+nothing read.
+
+`display_currency` is a setting now - three letters, changed from the settings
+screen rather than by editing a file on the server.
+
+## Converted at display time, never on the way in
+
+An observation keeps what the source said. Rewriting it into local money would
+lose the number that was actually published and bake in whatever rate applied
+that afternoon.
+
+**At the rate for the day it was observed**, not today's. A shelf's history is a
+history of prices *and* of what money was worth: converting a 2019 price at
+today's rate would draw a line that moved when neither did.
+
+**A missing rate is not invented.** An amount with no rate to convert by is shown
+in dollars and says so - a kronor sign over an unconverted number is the one
+outcome worse than not converting.
+
+## Where the rates come from
+
+The European Central Bank's daily reference set: XML, free, no key, no account.
+It quotes against the euro, so every rate is derived - the dollar inverted, then
+the rest through it. Without a dollar rate in the answer nothing is written,
+because deriving one through a third currency would be guessing.
+
+`./bin/rates.php`, run from maintenance. A night without the ECB is **not a
+failed run**: rates go stale gracefully, the conversion falls back to the nearest
+one there is, and the message says the last ones still apply.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 204**.
+
+**"This source everywhere except on the C64" was expressible and unwritable.**
+
+`provider_scopes.platform_id` has been in the schema since it was written, with
+an index on it and a ranking rule in `providers_for()` that puts a machine rule
+above its branch. Every writer sent `0`.
+
+So the column, its index, the ranking, and the library guard added to the join in
+build 202 were all covering rows nothing could create. A comment in the schema
+described the feature; nothing implemented it.
+
+    an entry on the C64, filed under Games:
+      on at Software (branch)          -> asked
+      off at Software, C64 only        -> not asked
+      on at Games (branch, deeper)     -> asked
+      off at Games, C64 only           -> not asked
+
+A machine rule beats its branch at the same depth, and depth still wins overall -
+which is what the scoring already did, confirmed by running it rather than by
+reading it.
+
+**A machine from another library is refused**, because the lookup would not match
+it: scoping a branch to a platform row somebody cannot see leaves a rule that
+silently never fires.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 203**.
+
+**One fix, two places, and only one of them done.**
+
+Build 192 taught `provider_scopes` to match a platform by slug, because every
+library has its own copy of the shared rows and matching on the row id missed
+them. Build 197 found that matching by slug alone reaches **every** library with
+a machine of that name, and gave the mapping lookup a guard.
+
+The scope lookup did not get one. So a scope somebody set on their own Amiga
+could decide which sources are asked about somebody else's - the same leak, in
+the half that was found first and fixed last.
+
+    an entry on library 7's Amiga sees: any platform, the shared Amiga, library 7's Amiga
+    an entry on library 9's Amiga sees: any platform, the shared Amiga, library 9's Amiga
+
+This library's rows or the shared template, never another library's. A scope that
+names no machine at all - "any platform" - is unaffected, because it never
+crosses a boundary to begin with.
+
+The other slug joins in the engine were checked rather than assumed: the mapping
+lookup carries its guard in the `WHERE`, and the category one binds
+`mc.library_id` directly.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 202**.
+
+**Who may read a branch's sources, and who may change them.**
+
+Yesterday's endpoints got both wrong.
+
+**Reading** selected the category's `library_id` and never looked at it, so
+anybody signed in could read another library's filing configuration. Checked now,
+and answered as "not found" rather than "forbidden" - a tree in a library this
+account cannot read is not something to confirm the existence of.
+
+**Writing** required an instance administrator, which is wrong in both
+directions: it let an admin rearrange a library they have no part in, and stopped
+a library's own curator from arranging their own tree. Which sources a branch is
+asked about is a decision about that branch, and belongs with the rest of the
+structure permissions.
+
+    a library curator, own tree          may edit: yes
+    a library curator, another tree      may edit: no
+    a curator, the shared tree           may edit: no
+    an admin, the shared tree            may edit: yes
+
+The shared tree is `is_admin()` rather than `can_manage_library()`, which falls
+back to whatever library the person happens to be working in - that would let a
+curator of one shelf edit the template every library is built from.
+
+The answer says whether this account may change any of it, so a client can show
+the configuration without offering buttons that lead to a 403.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 201**.
+
+**Which sources a branch is asked about, editable at last.**
+
+`provider_scopes` has modelled this since the schema was written: bound to a
+node, inherited downwards, and a row deeper in the tree can switch a source off
+for its own subtree. It was seeded on install and read on every lookup, and
+**nothing could change it** - no endpoint, no screen. The old non-API version had
+this; the rewrite carried the table and left the editing behind.
+
+`GET` and `POST /categories/{id}/sources`.
+
+**Three states, not a checkbox.** On here, off here, or inherited - and inherited
+is the common one. A screen with only on and off makes somebody set explicitly
+what they already have, and the setting then stops following the branch it came
+from. `inherit` removes the row rather than writing one.
+
+The answer says **where it came from**, so "on" reads as "on, because Software
+says so" rather than as a setting nobody remembers making.
+
+Read in one query rather than one per source per ancestor: thirteen sources and a
+tree five deep is sixty-five statements for a screen with thirteen rows on it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 200**.
+
+**A mapping can now be corrected by hand.**
+
+Every seeder in this engine says it fills gaps and never writes over a mapping
+somebody corrected by hand. Nothing could make one - there was no endpoint and no
+form - so the comments had been describing a capability that did not exist, and a
+shipped mapping that was wrong for a shelf could only be lived with.
+
+`POST /admin/metadata-providers/{id}/platforms/{platform}` with what that source
+calls the machine. This one **writes over**, which is the whole point: the
+seeders fill gaps precisely so they do not undo it.
+
+POST rather than PUT because every other write on this resource is a POST and the
+clients have none - one verb for one endpoint would be a method added to every
+client for tidiness rather than for a reason.
+
+**Clearing is not mapping to nothing.** With no row the lookup falls back to the
+shared template, which is the shipped answer: removing a correction puts things
+back rather than switching a machine off.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 199**.
+
+**The mapping count was measuring the wrong thing.**
+
+The sources list counted every mapping row on the instance. Once mappings became
+a library's own, that number always looked healthy: the template rows are there
+after any install, and a library that has never taken its own contributes
+nothing. It said "mapped" while a shelf could not be looked up.
+
+It counts the **shared template** now, which is the question that page can
+actually answer - what a source can be asked about at all.
+
+**Whether a given library has taken them is a fact about that library**, so each
+of its platforms now carries what the sources call it. One query for the lot
+rather than one per machine: the page already runs several statements and a
+column that is usually two words should not add a dozen more.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 198**.
+
+**Mappings are part of a library's structure, and only its own.**
+
+Libraries are separated because access to them is. A mapping - what a metadata
+source calls this library's machines - is part of a library's structure, so
+taking the shipped ones is now something an owner **ticks**, like the category
+trees or the locations, rather than something the installer writes into every
+shelf on the instance.
+
+`Metadata platform mappings` is a sync part. It brings in the platforms first,
+because a mapping points at one and would otherwise quietly do nothing on a
+library with no machines yet. Gaps only, so a mapping somebody corrected by hand
+survives every later sync.
+
+## The lookup no longer borrows
+
+Build 196 ordered the fallback so another library's mapping came last. That is
+the same leak with better manners: a mapping written on one shelf could still
+answer a lookup on another.
+
+Excluded now. A lookup sees this library's own rows, or the shared template - and
+the template is not anybody's, it is what every library's copy was made from.
+Falling back to it is falling back to the default rather than to a stranger.
+
+A library with neither gets nothing, which is the honest answer and now says so
+on the page.
+
+## Where the rows are written
+
+* The **template** pass writes against the shared platforms only, which is what
+  it always should have done.
+* The **installer** writes each library's own, for the libraries it just made.
+* **Adding a source** writes the template and then each library's, the same way
+  it already loops libraries for the scopes.
+* A **sync** writes one library's, when its owner asks.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 197**.
+
+**Yes, per library - and the fallback was leaking across them.**
+
+`metadata_provider_platforms` is keyed on a platform row, and platforms are per
+library: a null `library_id` is the shared copy and every library makes its own.
+So a mapping is per library on purpose, and one shelf calling a machine something
+unusual stays that shelf's business.
+
+The slug fallback added in build 191 had `LIMIT 1` and **no order**, so it took
+whichever row the database happened to offer. A correction somebody made on their
+own library could answer a lookup in a different library, silently - which is the
+opposite of what per-library mappings are for.
+
+Ordered now: the shared row first, then this library's own, then anyone else's.
+
+* The **shared row** is the honest default when a library has no mapping of its
+  own. It is what the copy was made from.
+* Another library's stays **last rather than excluded**: a mapping written by
+  hand is still better evidence than nothing, and on a fresh install before the
+  second seeding pass it may be the only row there is.
+
+An exact mapping still wins outright, so a correction is never talked over by the
+fallback that exists to cover its absence.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 196**.
+
+**The miss note reaches the screen, and says what to do.**
+
+Build 193 gave a source a way to explain a miss and put it in the log. The person
+looking at "Nothing found" still had nothing - and they are the one who can act
+on it.
+
+Collected per source and sent beside the errors rather than among them: a source
+that looked properly and found nothing has worked, and dressing that as a failure
+would be wrong. An object always, for the same reason `errors` is - an empty PHP
+array encodes as `[]` and a populated one as `{}`, and a client that decodes one
+cannot decode the other.
+
+The note now ends with the answer:
+
+    their search offered nothing on amiga, and no page at amiga/superfrog-1993
+    or amiga/superfrog. If they list it under another name, put its address in
+    this entry's reference link.
+
+That last part is build 194's escape hatch, and nobody would have guessed it was
+there.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 195**.
+
 **The C64 mapping is right, and that page is a different game.**
 
 `c64` maps to `commodore-64`, which is what their address says. What differs is

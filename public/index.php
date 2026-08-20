@@ -252,6 +252,8 @@ if (str_starts_with($path, '/api/')) {
         ['PATCH',  '#^/api/v1/profile/notifications$#',   fn() => api_notification_prefs_update()],
         ['GET',    '#^/api/v1/admin/settings$#',          fn() => api_settings_show()],
         ['PATCH',  '#^/api/v1/admin/settings$#',          fn() => api_settings_update()],
+        ['POST',   '#^/api/v1/admin/exchange-rates/refresh$#', fn() => api_exchange_rates_refresh()],
+        ['GET',    '#^/api/v1/admin/exchange-rates$#',     fn() => api_exchange_rates_index()],
         ['GET',    '#^/api/v1/items/(\d+)/links/candidates$#', fn($id) => api_item_links_candidates((int) $id)],
         ['GET',    '#^/api/v1/items/(\d+)/links$#',        fn($id) => api_item_links_index((int) $id)],
         ['POST',   '#^/api/v1/items/(\d+)/links$#',        fn($id) => api_item_links_create((int) $id)],
@@ -336,8 +338,24 @@ if (str_starts_with($path, '/api/')) {
                                                             fn($id) => api_metadata_providers_update((int) $id)],
         ['DELETE', '#^/api/v1/admin/metadata-providers/(\d+)$#',
                                                             fn($id) => api_metadata_providers_delete((int) $id)],
+        // Which sources a branch of the filing tree is asked about.
+        //
+        // Inherited downwards: a source switched on at "Software > Games"
+        // covers everything beneath it, and a row deeper in the tree can switch
+        // it off again for that subtree.
+        ['GET',    '#^/api/v1/categories/(\d+)/sources$#',
+                                                            fn($id) => api_category_sources((int) $id)],
+        ['POST',   '#^/api/v1/categories/(\d+)/sources$#',
+                                                            fn($id) => api_category_sources_set((int) $id)],
         ['POST',   '#^/api/v1/admin/metadata-providers/(\d+)/forget$#',
                                                             fn($id) => api_metadata_providers_forget((int) $id)],
+        // POST rather than PUT: every other write on this resource is a POST and
+        // the clients have no PUT, so one verb for one endpoint would be a
+        // method added to every client for tidiness rather than for a reason.
+        ['POST',   '#^/api/v1/admin/metadata-providers/(\d+)/platforms/(\d+)$#',
+                                                            fn($id, $p) => api_metadata_provider_platform_set((int) $id, (int) $p)],
+        ['DELETE', '#^/api/v1/admin/metadata-providers/(\d+)/platforms/(\d+)$#',
+                                                            fn($id, $p) => api_metadata_provider_platform_clear((int) $id, (int) $p)],
         ['GET',    '#^/api/v1/admin/auth-methods$#',       fn() => api_auth_methods_index()],
         ['POST',   '#^/api/v1/admin/auth-methods$#',       fn() => api_auth_methods_create()],
         ['POST',   '#^/api/v1/admin/auth-methods/test$#',  fn() => api_auth_methods_test()],

@@ -108,7 +108,15 @@ function seed_parts_all(): array
 {
     return ['makers' => true, 'credit_roles' => true, 'platforms' => true, 'categories' => true,
             'hardware_models' => true, 'software_models' => true,
-            'environments' => true, 'locations' => true];
+            'environments' => true, 'locations' => true,
+            // What each metadata source calls this library's machines.
+            //
+            // A part somebody ticks, like the rest: a library's mappings are its
+            // own, and an owner who wants the shipped ones can take them or
+            // write their own by hand. The installer used to write them behind
+            // everybody's back, which is the wrong shape for something scoped to
+            // a library.
+            'metadata_platforms' => true];
 }
 
 function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $parts = null): int
@@ -127,6 +135,9 @@ function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $
     if (!empty($parts['hardware_models']))  { $parts['categories'] = true; $parts['platforms'] = true; $parts['makers'] = true; }
     if (!empty($parts['software_models']))  { $parts['categories'] = true; $parts['platforms'] = true; $parts['makers'] = true; }
     if (!empty($parts['environments']))     { $parts['platforms'] = true; $parts['makers'] = true; }
+    // A mapping points at a platform, so the platform comes first. Without this
+    // the part would quietly do nothing on a library that has no machines yet.
+    if (!empty($parts['metadata_platforms'])) { $parts['platforms'] = true; $parts['makers'] = true; }
 
     // Additive, not once-only. It used to bail if the library had any platform
     // at all, which meant a library made before a template existed never got it
@@ -229,6 +240,18 @@ function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $
     if (!empty($parts['locations'])) {
         // Somewhere to put things. Structure, not examples.
         seed_library_locations($libraryId);
+    }
+
+    if (!empty($parts['metadata_platforms'])) {
+        // What each configured source calls this library's machines.
+        //
+        // Every enabled source that files by platform, against the rows this
+        // library now has. Gaps only - `metadata_seed_platform_map()` never
+        // writes over a mapping somebody corrected by hand.
+        foreach (all('SELECT id, type FROM metadata_providers') as $provider) {
+            seed_library_metadata_platforms(
+                $libraryId, (int) $provider['id'], (string) $provider['type']);
+        }
     }
 
     // --- Software models -----------------------------------------------------
@@ -1476,7 +1499,18 @@ function providers_for(int $categoryId, ?int $platformId = null): array
       LEFT JOIN platforms scoped ON scoped.id = ps.platform_id
       LEFT JOIN platforms asked  ON asked.id = ?
           WHERE ps.category_id IN (' . implode(',', array_fill(0, count($ancestry), '?')) . ')
-            AND (ps.platform_id = 0' . ($platformId !== null ? ' OR scoped.slug = asked.slug' : '') . ')',
+            AND (ps.platform_id = 0' . ($platformId !== null
+                 // The same machine, in this library or the shared template.
+                 //
+                 // Matching on slug alone reaches every library that has a
+                 // platform of that name - so a scope somebody set on their own
+                 // Amiga could decide which sources are asked about somebody
+                 // else\'s. The mapping lookup was given this guard when the
+                 // same fault was found there; this half was left open.
+                 ? ' OR (scoped.slug = asked.slug
+                         AND (scoped.library_id IS NULL
+                              OR scoped.library_id = asked.library_id))'
+                 : '') . ')',
         $platformId !== null
             ? array_merge([$platformId], $ancestry)
             : array_merge([null], $ancestry)

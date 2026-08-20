@@ -1166,6 +1166,21 @@ function remote_platform_for(int $providerId, int $platformId): ?string
            JOIN platforms mapped ON mapped.id = mpp.platform_id
            JOIN platforms asked  ON asked.slug = mapped.slug
           WHERE mpp.provider_id = ? AND asked.id = ?
+       -- This library\'s own rows, or the shared template. Never another
+       -- library\'s.
+       --
+       -- Libraries are separated because access to them is: a mapping somebody
+       -- wrote on their own shelf is theirs, and answering a lookup in a
+       -- different library with it leaks a decision across a boundary that
+       -- exists on purpose. An earlier version ordered by preference and left
+       -- another library\'s as a last resort, which is the same leak with better
+       -- manners.
+       --
+       -- The shared row is not anybody\'s: it is the template every library\'s
+       -- copy was made from, and falling back to it is falling back to the
+       -- default rather than to a stranger.
+            AND (mapped.library_id IS NULL OR mapped.library_id = asked.library_id)
+       ORDER BY mapped.library_id = asked.library_id DESC, mapped.platform_id
           LIMIT 1',
         [$providerId, $platformId]
     );
@@ -1407,7 +1422,7 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
             $results === [] && $note !== null ? ' - ' . $note : ''),
         LOG_INFO, $logCtx + ['results' => count($results), 'images' => $pictures, 'ms' => $took]);
 
-    return ['results' => $results, 'error' => null];
+    return ['results' => $results, 'error' => null, 'note' => $note];
 }
 
 /** Search every enabled provider, best-priority first. */
@@ -1486,6 +1501,10 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
 {
     $results  = [];
     $errors   = [];
+    // What a source that found nothing had to say about it. Separate from
+    // `errors`, because a miss is not a failure and should not be dressed as
+    // one - a source that looked properly and found nothing has worked.
+    $notes    = [];
     $unmapped = [];
     $skipped  = [];
     $asked    = [];
@@ -1602,6 +1621,12 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
         // heard of looked exactly like a search it never ran.
         $asked[(string) $provider['name']] = count($out['results']);
 
+        // And why, when the source said. `asked` answers "did it look"; this
+        // answers "what did it look for", which is the half somebody can act on.
+        if ($out['results'] === [] && !empty($out['note'])) {
+            $notes[(string) $provider['name']] = (string) $out['note'];
+        }
+
         foreach ($out['results'] as $r) {
             $results[] = $r;
         }
@@ -1616,6 +1641,7 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
     return [
         'results'  => metadata_rank_results($results, $title, $localPlatform),
         'errors'   => $errors,
+        'notes'    => $notes,
         'unmapped' => $unmapped,
         'skipped'  => $skipped,
         'asked'    => $asked,
@@ -3819,7 +3845,12 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         // not exist - and only the last means the title is genuinely not in
         // their catalogue under that name.
         return [[], null, 'their search offered nothing on ' . $console
-                        . ', and no page at ' . implode(' or ', $tried)];
+                        . ', and no page at ' . implode(' or ', $tried)
+                        // What to do about it, since a miss here is usually a
+                        // title their catalogue names differently - and the way
+                        // to settle that is not something anybody would guess.
+                        . '. If they list it under another name, put its address'
+                        . ' in this entry\'s reference link.'];
     }
 
     // The search page may already have been the product page, in which case
@@ -4394,14 +4425,16 @@ function metadata_template_platform_map(string $type): array
 }
 
 /**
- * Write those mappings for one provider.
+ * Write those mappings against the shared platforms.
+ *
+ * The template, which every library's copy is made from. A library's own rows
+ * are written by seed_library_metadata_platforms() when somebody syncs that part
+ * of its structure - because a library's structure is its own, and an owner who
+ * has not asked for the shipped mappings should not find them there.
  *
  * Never over an existing row. A mapping somebody made by hand, or that automap
  * got from the service itself, is better evidence than a file that shipped with
  * the release - so this fills gaps and leaves answers alone.
- *
- * Matched by slug, so it covers a library's own copy of a platform as well as the
- * shared one: they carry the same slug and are the same machine.
  *
  * @return int how many mappings were written
  */
@@ -4417,7 +4450,14 @@ function metadata_seed_platform_map(int $providerId, string $type): int
 
     $written = 0;
     foreach ($map as $slug => $remoteId) {
-        foreach (all('SELECT id FROM platforms WHERE slug = ?', [$slug]) as $p) {
+        // The shared template only.
+        //
+        // This wrote every platform with a matching slug across the instance,
+        // which put a row in each library whether its owner had asked for one or
+        // not - and a library's structure is its own. The per-library rows are
+        // written by seed_library_metadata_platforms(), which a sync runs when
+        // somebody ticks the part.
+        foreach (all('SELECT id FROM platforms WHERE library_id IS NULL AND slug = ?', [$slug]) as $p) {
             $done = q('INSERT IGNORE INTO metadata_provider_platforms
                            (provider_id, platform_id, remote_platform_id)
                        VALUES (?, ?, ?)',
@@ -4426,6 +4466,105 @@ function metadata_seed_platform_map(int $providerId, string $type): int
         }
     }
     return $written;
+}
+
+/**
+ * Those mappings for one library's own platforms.
+ *
+ * The same rows, scoped. `metadata_seed_platform_map()` writes every platform
+ * with a matching slug across the whole instance, which is right for the shared
+ * template and wrong for a sync somebody ran on their own shelf: a library's
+ * structure is its own, and importing it should not reach into anybody else's.
+ *
+ * @return int how many mappings were written
+ */
+function seed_library_metadata_platforms(int $libraryId, int $providerId, string $type): int
+{
+    if (!metadata_provider_filters_by_platform($type)) {
+        return 0;
+    }
+    $map = metadata_template_platform_map($type);
+    if ($map === []) {
+        return 0;
+    }
+
+    $written = 0;
+    foreach ($map as $slug => $remoteId) {
+        foreach (all('SELECT id FROM platforms WHERE library_id = ? AND slug = ?',
+                     [$libraryId, $slug]) as $p) {
+            // INSERT IGNORE: a mapping somebody corrected by hand is better
+            // evidence than a file that shipped with the release, so this fills
+            // gaps and leaves answers alone.
+            $done = q('INSERT IGNORE INTO metadata_provider_platforms
+                           (provider_id, platform_id, remote_platform_id)
+                       VALUES (?, ?, ?)',
+                      [$providerId, (int) $p['id'], (string) $remoteId]);
+            $written += $done->rowCount();
+        }
+    }
+    return $written;
+}
+
+/**
+ * Fetch what a dollar is worth today, and record it.
+ *
+ * The European Central Bank publishes a daily reference set as XML, free, with
+ * no key and no account - which is why it is the one used. It quotes against the
+ * euro, so every rate here is derived: USD to EUR inverted, then EUR to the rest.
+ *
+ * Only ever fills in today. A rate is a fact about a date, and rewriting
+ * yesterday's because today's is different would make a price history move when
+ * neither the price nor the money did.
+ *
+ * @return array{written: int, error: ?string}
+ */
+function exchange_rates_refresh(?string $on = null): array
+{
+    $on  = $on ?? date('Y-m-d');
+    $url = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml';
+
+    [$body, $err] = metadata_http_get($url, ['Accept: application/xml'], 15);
+    if ($err !== null) {
+        return ['written' => 0, 'error' => 'Exchange rates: ' . $err];
+    }
+
+    // Their file is one <Cube currency="SEK" rate="11.02"/> per currency, all
+    // against the euro.
+    if (!preg_match_all('/currency=[\'"](\w{3})[\'"]\s+rate=[\'"]([\d.]+)[\'"]/', (string) $body, $m, PREG_SET_ORDER)) {
+        return ['written' => 0, 'error' => 'Exchange rates: that answer had no rates in it.'];
+    }
+
+    $perEuro = [];
+    foreach ($m as $hit) {
+        $perEuro[strtoupper($hit[1])] = (float) $hit[2];
+    }
+    if (empty($perEuro['USD'])) {
+        // Without the dollar there is nothing to convert *from*, and deriving it
+        // through a third currency would be guessing.
+        return ['written' => 0, 'error' => 'Exchange rates: no dollar rate in that answer.'];
+    }
+
+    // One euro buys $perEuro['USD'] dollars, so one dollar buys 1/that euros.
+    $euroPerDollar = 1 / $perEuro['USD'];
+
+    $written = 0;
+    foreach ($perEuro + ['EUR' => 1.0] as $code => $perEuroRate) {
+        if ($code === 'USD') {
+            continue;
+        }
+        $rate = $euroPerDollar * $perEuroRate;
+        $done = q('INSERT INTO exchange_rates (base, quote, rate, observed_on, source)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE rate = VALUES(rate), source = VALUES(source)',
+                  ['USD', $code, $rate, $on, 'ecb']);
+        $written += $done->rowCount() > 0 ? 1 : 0;
+    }
+
+    log_event('metadata', 'rates.refreshed',
+        sprintf('%d exchange rate%s for %s', $written, $written === 1 ? '' : 's', $on),
+        LOG_INFO, ['written' => $written, 'on' => $on]);
+
+    return ['written' => $written, 'error' => null];
 }
 
 /** How many of this instance's platforms a provider can filter on. */

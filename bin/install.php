@@ -699,9 +699,17 @@ if ($a['install']['deploy'] !== 'keep') {
     //
     // Fills gaps only: metadata_seed_platform_map() never writes over an
     // existing row.
+    //
+    // Per library, and only the ones this install just made. A mapping belongs
+    // to a library the way the rest of its structure does, and writing them
+    // across the instance is the shape that made a mapping look global when it
+    // is not.
     $extra = 0;
-    foreach (all('SELECT id, type FROM metadata_providers') as $p) {
-        $extra += metadata_seed_platform_map((int) $p['id'], (string) $p['type']);
+    foreach (all('SELECT id FROM libraries') as $lib) {
+        foreach (all('SELECT id, type FROM metadata_providers') as $p) {
+            $extra += seed_library_metadata_platforms(
+                (int) $lib['id'], (int) $p['id'], (string) $p['type']);
+        }
     }
     if ($extra > 0) {
         say(sprintf('  %d further platform mapping%s for the new libraries',

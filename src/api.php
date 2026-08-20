@@ -511,6 +511,60 @@ function image_to_api(array $row): array
  * A catalogue entry as clients see it. Nested objects rather than bare foreign
  * keys, because a phone showing a list should not need five extra requests.
  */
+/**
+ * One valuation, in the money this instance shows.
+ *
+ * The observation keeps its own currency - it is what a source said, and a
+ * source that quotes dollars said dollars. What is added is the converted
+ * figure, so a client can show kronor and still say the market published
+ * dollars.
+ *
+ * Converted at the rate for the day it was observed, not today's: a shelf's
+ * history is a history of prices *and* of what money was worth, and using
+ * today's rate throughout would draw a line that moved when neither did.
+ */
+/**
+ * One amount in the money this instance shows, or nothing when it already is.
+ *
+ * Null rather than a copy of the number, so a client can ask "is there a second
+ * figure to print" instead of comparing two amounts and guessing.
+ */
+function api_amount_shown(float $amount, string $currency, ?string $on): ?array
+{
+    $shown = in_display_currency($amount, $currency, $on);
+    if (!$shown['converted']) {
+        return null;
+    }
+    return [
+        'amount'   => $shown['amount'],
+        'currency' => $shown['currency'],
+        'rate'     => $shown['rate'],
+    ];
+}
+
+function api_valuation_shown(?array $v): ?array
+{
+    if ($v === null) {
+        return null;
+    }
+    $shown = in_display_currency(
+        (float) $v['amount'],
+        (string) ($v['currency'] ?? 'USD'),
+        $v['observed_on'] ?? null
+    );
+    // Only when it is actually different. An instance showing dollars gets the
+    // same object it always did rather than a second copy of one number.
+    if (!$shown['converted']) {
+        return $v;
+    }
+    $v['shown'] = [
+        'amount'   => $shown['amount'],
+        'currency' => $shown['currency'],
+        'rate'     => $shown['rate'],
+    ];
+    return $v;
+}
+
 function item_to_api(array $r, bool $withImages = false): array
 {
     // The hardware half, from its own table.
@@ -659,6 +713,20 @@ function item_to_api(array $r, bool $withImages = false): array
         'acquired_from'    => $r['acquired_from'],
         'acquired_note'    => $r['acquired_note'],
         'acquired_price'   => $r['acquired_price'] === null ? null : (float) $r['acquired_price'],
+        // What was paid, in the money this instance shows.
+        //
+        // The entry keeps its own currency - somebody who paid in kronor recorded
+        // kronor - and this is the same figure alongside what a copy is worth
+        // now, which is the comparison the two numbers exist to support.
+        //
+        // At the rate for the day it was bought, so "I paid this, it is worth
+        // that" is two figures in one money and neither has been moved by a rate
+        // that changed since.
+        'acquired_shown'   => $r['acquired_price'] === null
+            ? null
+            : api_amount_shown((float) $r['acquired_price'],
+                               (string) $r['currency'],
+                               $r['acquired_on'] ?? null),
         'currency'         => $r['currency'],
         'location'         => $r['location_id'] === null ? null : [
             'id'   => (int) $r['location_id'],
@@ -777,11 +845,11 @@ function item_to_api(array $r, bool $withImages = false): array
         // hundred of them for a column nobody is reading. The entry's own page
         // asks for the full shape; the list does not.
         'valuation'  => $withImages
-            ? latest_price_for(
+            ? api_valuation_shown(latest_price_for(
                 $r['completeness'] ?? null,
                 (string) $r['title'],
                 $r['platform_id'] === null ? null : (int) $r['platform_id']
-            )
+            ))
             : null,
     ];
 

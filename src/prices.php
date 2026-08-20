@@ -85,6 +85,104 @@ function pricecharting_band_ids(): array
 }
 
 /**
+ * What this instance shows money in.
+ *
+ * A setting rather than config, so it can be changed without editing a file on
+ * the server - and defaulting to the configured one, so an instance that has
+ * never set it behaves as it always did.
+ */
+function display_currency(): string
+{
+    $set = setting('display_currency');
+    if (is_string($set) && preg_match('/^[A-Z]{3}$/', $set)) {
+        return $set;
+    }
+    return strtoupper((string) (config('currency') ?: 'USD'));
+}
+
+/**
+ * How many `$quote` one US dollar bought, nearest to a date.
+ *
+ * Nearest on or before, so converting a price from 2019 uses a rate from 2019
+ * rather than today's - a shelf's history is a history of prices *and* of what
+ * money was worth, and using today's rate throughout would draw a line that
+ * moved when neither did.
+ *
+ * Falls back to the most recent rate there is when nothing is old enough: an
+ * instance that started collecting rates last week can still show an older
+ * observation, and showing it at a slightly wrong rate is better than showing
+ * dollars to somebody who asked for kronor.
+ */
+function exchange_rate(string $quote, ?string $on = null): ?float
+{
+    $quote = strtoupper($quote);
+    if ($quote === 'USD') {
+        return 1.0;
+    }
+    $on = $on ?? date('Y-m-d');
+
+    $row = one('SELECT rate FROM exchange_rates
+                 WHERE base = ? AND quote = ? AND observed_on <= ?
+              ORDER BY observed_on DESC LIMIT 1',
+               ['USD', $quote, $on]);
+    if ($row === null) {
+        $row = one('SELECT rate FROM exchange_rates
+                     WHERE base = ? AND quote = ?
+                  ORDER BY observed_on ASC LIMIT 1',
+                   ['USD', $quote]);
+    }
+    return $row === null ? null : (float) $row['rate'];
+}
+
+/**
+ * One amount, in the money this instance shows.
+ *
+ * Returns the original untouched when there is no rate for the pair, and says
+ * so - a page can then show the dollars and admit they are dollars rather than
+ * printing a kronor sign over an unconverted number, which is the one outcome
+ * worse than not converting at all.
+ *
+ * @return array{amount: float, currency: string, converted: bool, rate: ?float}
+ */
+function in_display_currency(float $amount, string $from, ?string $on = null): array
+{
+    $from = strtoupper($from);
+    $to   = display_currency();
+
+    if ($from === $to) {
+        return ['amount' => $amount, 'currency' => $to, 'converted' => false, 'rate' => null];
+    }
+    // Through the dollar, because that is what the rate table is keyed on.
+    //
+    // A source quotes dollars, but an entry records what somebody paid in their
+    // own money - so a shelf in Sweden showing pounds has to go SEK to USD to
+    // GBP. Both legs must exist: half a chain is not half an answer, and
+    // inventing the missing leg would put a confident wrong number on a page.
+    $toUsd = 1.0;
+    if ($from !== 'USD') {
+        $fromRate = exchange_rate($from, $on);
+        if ($fromRate === null || $fromRate <= 0) {
+            return ['amount' => $amount, 'currency' => $from, 'converted' => false, 'rate' => null];
+        }
+        // The table says how many `$from` one dollar buys, so the other way is
+        // its reciprocal.
+        $toUsd = 1 / $fromRate;
+    }
+
+    $rate = exchange_rate($to, $on);
+    if ($rate === null) {
+        return ['amount' => $amount, 'currency' => $from, 'converted' => false, 'rate' => null];
+    }
+    $combined = $toUsd * $rate;
+    return [
+        'amount'    => round($amount * $combined, 2),
+        'currency'  => $to,
+        'converted' => true,
+        'rate'      => $combined,
+    ];
+}
+
+/**
  * The six prices out of a PriceCharting product page.
  *
  * Their cells carry ids - `used_price`, `complete_price` and the rest - which is

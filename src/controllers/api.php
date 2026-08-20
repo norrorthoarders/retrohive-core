@@ -1680,7 +1680,36 @@ function api_library_contents(int $id): void
             'images'        => (int) $r['images'],
             'created_at'    => api_datetime($r['created_at']),
         ], $entries),
-        'platforms' => all('SELECT id, name, slug FROM platforms WHERE library_id = ? ORDER BY name', [$id]),
+        // Each of this library's machines, and what the sources call it.
+        //
+        // A mapping is part of a library's structure and its owner is the one
+        // who decides about it - so which of them exist is a fact about this
+        // library and belongs on this page. The sources list can only say what
+        // the shared template has.
+        'platforms' => (static function () use ($id): array {
+            $rows = all('SELECT id, name, slug FROM platforms WHERE library_id = ? ORDER BY name', [$id]);
+            // One query for the lot, keyed on the platform.
+            //
+            // A library has a dozen machines and this page already runs several
+            // statements; asking per platform would add a dozen more for a
+            // column that is usually two words.
+            $byPlatform = [];
+            foreach (all(
+                'SELECT mpp.platform_id, mp.name AS source, mpp.remote_platform_id AS remote
+                   FROM metadata_provider_platforms mpp
+                   JOIN metadata_providers mp ON mp.id = mpp.provider_id
+                   JOIN platforms p ON p.id = mpp.platform_id
+                  WHERE p.library_id = ?
+               ORDER BY mp.name', [$id]) as $m) {
+                $byPlatform[(int) $m['platform_id']][] =
+                    ['source' => $m['source'], 'remote' => $m['remote']];
+            }
+            foreach ($rows as &$p) {
+                $p['metadata'] = $byPlatform[(int) $p['id']] ?? [];
+            }
+            unset($p);
+            return $rows;
+        })(),
         'companies' => all('SELECT id, name, slug FROM companies WHERE library_id = ? ORDER BY name', [$id]),
         'locations' => all('SELECT id, name FROM locations WHERE library_id = ? ORDER BY name', [$id]),
         'hardware'  => all('SELECT id, name, slug FROM hardware_models WHERE library_id = ? ORDER BY name', [$id]),
@@ -4445,6 +4474,10 @@ function api_metadata_search(): void
         // cost an evening: with every source working the answer was an array, and
         // disabling a single provider turned it into an object.
         'errors'   => (object) $out['errors'],
+        // Why a source that ran found nothing. An object always, for the same
+        // reason `errors` is: an empty PHP array encodes as [] and a populated
+        // one as {}, and a client that decodes one cannot decode the other.
+        'notes'    => (object) ($out['notes'] ?? []),
         // How many sources were actually consulted for this entry's branch.
         // Zero means nobody was asked, which a client must be able to tell
         // apart from every source having been asked and found nothing.
@@ -5880,8 +5913,21 @@ function api_metadata_providers_index(): void
             // logs "0 results". A source added before its mapping shipped stays
             // in that state until somebody syncs the structure, and nothing said
             // so.
+            // The shared template's mappings, not every row on the instance.
+            //
+            // Counting all of them made this always look healthy: a library that
+            // has never synced its own contributes nothing, and the template
+            // rows are always there after an install. The number said "mapped"
+            // while a shelf could not be looked up.
+            //
+            // The template is what a source can be asked about at all, which is
+            // the question this column answers. Whether a given library has
+            // taken them is a question about that library, and belongs on its
+            // own page.
             'platforms_mapped' => (int) scalar(
-                'SELECT COUNT(*) FROM metadata_provider_platforms WHERE provider_id = ?',
+                'SELECT COUNT(*) FROM metadata_provider_platforms mpp
+                   JOIN platforms p ON p.id = mpp.platform_id
+                  WHERE mpp.provider_id = ? AND p.library_id IS NULL',
                 [(int) $r['id']]
             ),
             'platforms_available' => count(metadata_template_platform_map((string) $r['type'])),
@@ -5962,10 +6008,19 @@ function api_metadata_providers_create(): void
         'last_error' => null,
     ]);
 
+    // The shared template first, then each library's own copy of it.
+    //
+    // Adding a source is an instance-wide act - the scopes below already loop
+    // every library for the same reason - but a mapping lands on a library's own
+    // platform rows, so it is written per library rather than across the
+    // instance in one statement.
+    //
+    // Gaps only, so a library that has corrected a mapping keeps it.
+    $mapped = metadata_seed_platform_map($id, $type);
     foreach (all('SELECT id FROM libraries') as $lib) {
         seed_library_provider_scopes((int) $lib['id']);
+        $mapped += seed_library_metadata_platforms((int) $lib['id'], $id, $type);
     }
-    $mapped = metadata_seed_platform_map($id, $type);
 
     $row = one('SELECT * FROM metadata_providers WHERE id = ?', [$id]);
     api_ok([
@@ -6090,6 +6145,274 @@ function api_item_prices(int $id): void
         // making somebody find their own condition in a list of six.
         'band' => price_band_for_completeness($item['completeness'] ?? null),
     ]);
+}
+
+/**
+ * Say what a source calls one of our machines.
+ *
+ * The half the seeding has always assumed: every writer of this table says it
+ * fills gaps and never writes over a mapping somebody corrected by hand, and
+ * until now there was no way to make one. A shipped mapping that is wrong for a
+ * shelf could only be lived with.
+ *
+ * Per platform row, so it lands on the library that owns it - which is the whole
+ * point of the mappings being per library.
+ */
+function api_metadata_provider_platform_set(int $providerId, int $platformId): void
+{
+    api_require_admin();
+
+    $provider = one('SELECT id, type, name FROM metadata_providers WHERE id = ?', [$providerId]);
+    if ($provider === null) {
+        api_error('not_found', 'No such metadata source.', 404);
+    }
+    $platform = one('SELECT id, name, library_id FROM platforms WHERE id = ?', [$platformId]);
+    if ($platform === null) {
+        api_error('not_found', 'No platform with that id.', 404);
+    }
+
+    $in     = api_body();
+    $remote = trim((string) ($in['remote_platform_id'] ?? ''));
+    if ($remote === '') {
+        api_error('validation_failed',
+            'Send remote_platform_id - what that source calls this machine.', 422);
+    }
+    if (mb_strlen($remote) > 80) {
+        api_error('validation_failed', 'That identifier is longer than the column allows.', 422);
+    }
+
+    // Written over, not ignored. This is the one place that is somebody saying
+    // "no, it is called this" - the seeders fill gaps precisely so they do not
+    // undo it.
+    q('INSERT INTO metadata_provider_platforms (provider_id, platform_id, remote_platform_id)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE remote_platform_id = VALUES(remote_platform_id)',
+      [$providerId, $platformId, $remote]);
+
+    log_event('metadata', 'platform.mapped',
+        sprintf('%s: %s is "%s"', (string) $provider['name'], (string) $platform['name'], $remote),
+        LOG_INFO, ['provider_id' => $providerId, 'platform_id' => $platformId]);
+
+    api_ok(['provider_id' => $providerId, 'platform_id' => $platformId,
+            'remote_platform_id' => $remote]);
+}
+
+/**
+ * Forget what a source calls one of our machines.
+ *
+ * Not the same as mapping it to nothing: with no row the lookup falls back to
+ * the shared template, which is the shipped answer. Removing a correction should
+ * put things back rather than switch the machine off.
+ */
+function api_metadata_provider_platform_clear(int $providerId, int $platformId): void
+{
+    api_require_admin();
+
+    $n = q('DELETE FROM metadata_provider_platforms WHERE provider_id = ? AND platform_id = ?',
+           [$providerId, $platformId])->rowCount();
+
+    api_ok(['removed' => $n]);
+}
+
+/**
+ * Which sources this branch is asked about, and where each answer comes from.
+ *
+ * Three states, and the difference between them is the whole feature:
+ *
+ *   * **on here** - a row on this category says so.
+ *   * **off here** - a row on this category says not, overriding an ancestor.
+ *   * **inherited** - no row here; whatever the nearest ancestor with a row
+ *     said. This is the common case, and a screen that showed only on/off would
+ *     make somebody set explicitly what they already have.
+ *
+ * The ancestor is named, so "on" reads as "on, because Software says so" rather
+ * than as a setting nobody remembers making.
+ */
+function api_category_sources(int $categoryId): void
+{
+    api_require_auth();
+
+    $category = one('SELECT id, name, path, library_id FROM categories WHERE id = ?', [$categoryId]);
+    if ($category === null) {
+        api_error('not_found', 'No category with that id.', 404);
+    }
+    // A category belongs to a library, and so does the answer.
+    //
+    // The library_id was being selected and never looked at, so anybody signed
+    // in could read another library's filing configuration. Not found rather
+    // than forbidden: a tree in a library this account cannot read is not
+    // something to confirm the existence of.
+    if ($category['library_id'] !== null && !can_read_library((int) $category['library_id'])) {
+        api_error('not_found', 'No category with that id.', 404);
+    }
+
+    // Nearest first, this category included.
+    $ancestry = category_ancestry($categoryId);
+    $names    = [];
+    foreach (all('SELECT id, name FROM categories WHERE id IN ('
+                 . implode(',', array_fill(0, max(1, count($ancestry)), '?')) . ')',
+                 $ancestry ?: [0]) as $c) {
+        $names[(int) $c['id']] = (string) $c['name'];
+    }
+
+    // Every row in the ancestry, in one query.
+    //
+    // Thirteen sources and a tree five deep is sixty-five statements otherwise,
+    // for a screen with thirteen rows on it.
+    //
+    // Both kinds: `platform_id = 0` is the branch as a whole, and a row naming a
+    // machine covers that machine within the branch. The column and its index
+    // have always been there and nothing wrote the second kind, so the join that
+    // reads them was covering rows that could not exist.
+    $scopes    = [];
+    $perMachine = [];
+    if ($ancestry !== []) {
+        foreach (all('SELECT ps.provider_id, ps.category_id, ps.platform_id, ps.enabled,
+                             p.name AS platform_name
+                        FROM provider_scopes ps
+                   LEFT JOIN platforms p ON p.id = ps.platform_id
+                       WHERE ps.category_id IN ('
+                     . implode(',', array_fill(0, count($ancestry), '?')) . ')',
+                     $ancestry) as $row) {
+            if ((int) $row['platform_id'] === 0) {
+                $scopes[(int) $row['provider_id']][(int) $row['category_id']] = (bool) $row['enabled'];
+                continue;
+            }
+            $perMachine[(int) $row['provider_id']][] = [
+                'platform_id'   => (int) $row['platform_id'],
+                'platform_name' => $row['platform_name'],
+                'category_id'   => (int) $row['category_id'],
+                'enabled'       => (bool) $row['enabled'],
+                'set_here'      => (int) $row['category_id'] === $categoryId,
+            ];
+        }
+    }
+
+    $out = [];
+    foreach (enabled_metadata_providers() as $provider) {
+        $providerId = (int) $provider['id'];
+
+        // The nearest row in the ancestry, which is what a lookup would use.
+        // `$ancestry` is nearest first, so the first hit is the answer.
+        $from  = null;
+        $state = null;
+        foreach ($ancestry as $ancestorId) {
+            if (isset($scopes[$providerId][(int) $ancestorId])) {
+                $state = $scopes[$providerId][(int) $ancestorId];
+                $from  = (int) $ancestorId;
+                break;
+            }
+        }
+
+        $out[] = [
+            'provider_id' => $providerId,
+            'name'        => (string) $provider['name'],
+            'type'        => (string) $provider['type'],
+            // What a lookup here would do. False when nothing anywhere says yes.
+            'effective'   => $state === true,
+            // Whether this category itself decides, or an ancestor does.
+            'set_here'    => $from === $categoryId,
+            'inherited_from' => $from === null || $from === $categoryId
+                ? null
+                : ['id' => $from, 'name' => $names[$from] ?? null],
+            // Exceptions for one machine, which override the line above for
+            // entries on it. Rare, and worth showing where they exist: a source
+            // that is on for the branch and off for one console is not something
+            // to discover by wondering why a lookup came back empty.
+            'machines'  => $perMachine[$providerId] ?? [],
+        ];
+    }
+
+    api_ok($out, [
+        'category' => ['id' => $categoryId, 'name' => (string) $category['name']],
+        // Whether this account may change any of it, so a client can show the
+        // answer without offering buttons that lead to a 403.
+        'can_edit' => $category['library_id'] === null
+            ? is_admin()
+            : can_structure_library((int) $category['library_id']),
+    ]);
+}
+
+/**
+ * Switch a source on or off for this branch, or hand it back to the ancestry.
+ *
+ * `on` and `off` write a row here; `inherit` removes it. That third one matters:
+ * without it a branch could only ever be given an explicit answer, and undoing a
+ * change would mean guessing what it used to inherit.
+ */
+function api_category_sources_set(int $categoryId): void
+{
+    api_require_auth();
+
+    $category = one('SELECT id, library_id FROM categories WHERE id = ?', [$categoryId]);
+    if ($category === null) {
+        api_error('not_found', 'No category with that id.', 404);
+    }
+
+    // Whoever may shape this library's filing tree.
+    //
+    // `api_require_admin()` was the wrong test twice over: it let an instance
+    // administrator edit a library they have no part in, and it stopped a
+    // library's own curator from arranging their own tree. Which sources a
+    // branch is asked about is a decision about that branch, and belongs with
+    // the rest of the structure permissions.
+    //
+    // The shared tree - library_id null - is instance configuration, so that one
+    // is an administrator's. `is_admin()` rather than can_manage_library(),
+    // which falls back to whatever library the person is working in: that would
+    // let a curator of one shelf edit the template every library is built from.
+    $mayEdit = $category['library_id'] === null
+        ? is_admin()
+        : can_structure_library((int) $category['library_id']);
+    if (!$mayEdit) {
+        api_error('forbidden', 'You may not change how this branch is filed.', 403);
+    }
+
+    $in         = api_body();
+    $providerId = (int) ($in['provider_id'] ?? 0);
+    $state      = (string) ($in['state'] ?? '');
+    // Zero is the branch as a whole, which is what almost every row is.
+    $platformId = (int) ($in['platform_id'] ?? 0);
+
+    if ($platformId !== 0) {
+        $platform = one('SELECT id, library_id FROM platforms WHERE id = ?', [$platformId]);
+        if ($platform === null) {
+            api_error('not_found', 'No platform with that id.', 404);
+        }
+        // A machine from this library or the shared template, and no other.
+        //
+        // Otherwise somebody could scope their branch to a platform row
+        // belonging to a library they cannot see - which the lookup would then
+        // refuse to match anyway, leaving a rule that silently never fires.
+        if ($platform['library_id'] !== null
+            && (int) $platform['library_id'] !== (int) $category['library_id']) {
+            api_error('validation_failed', 'That machine belongs to another library.', 422);
+        }
+    }
+
+    if (one('SELECT id FROM metadata_providers WHERE id = ?', [$providerId]) === null) {
+        api_error('not_found', 'No such metadata source.', 404);
+    }
+    if (!in_array($state, ['on', 'off', 'inherit'], true)) {
+        api_error('validation_failed', 'state must be "on", "off" or "inherit".', 422);
+    }
+
+    if ($state === 'inherit') {
+        q('DELETE FROM provider_scopes
+            WHERE provider_id = ? AND category_id = ? AND platform_id = ?',
+          [$providerId, $categoryId, $platformId]);
+    } else {
+        q('INSERT INTO provider_scopes (provider_id, category_id, platform_id, enabled)
+           VALUES (?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)',
+          [$providerId, $categoryId, $platformId, $state === 'on' ? 1 : 0]);
+    }
+
+    log_event('metadata', 'scope.set',
+        sprintf('source %d is "%s" at category %d', $providerId, $state, $categoryId),
+        LOG_INFO, ['provider_id' => $providerId, 'category_id' => $categoryId]);
+
+    api_category_sources($categoryId);
 }
 
 function api_metadata_providers_forget(int $id): void

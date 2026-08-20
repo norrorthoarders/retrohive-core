@@ -50,6 +50,13 @@ echo "== $(date '+%Y-%m-%d %H:%M:%S') RetroHive maintenance =="
 # answering "who has been trying", and no longer.
 php bin/migrate.php prune "$KEEP_DAYS"
 
+# What a dollar is worth, for an instance that shows something else.
+#
+# Failing here is not failing the run: rates go stale gracefully - the conversion
+# falls back to the nearest one there is - and a night without the European
+# Central Bank is not a night worth reporting as broken.
+php bin/rates.php || echo "  exchange rates could not be fetched; the last ones still apply"
+
 # Queued mail that has already been sent or has permanently failed.
 if php bin/notify.php status >/dev/null 2>&1; then
   php bin/notify.php status
