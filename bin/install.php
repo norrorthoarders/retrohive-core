@@ -689,32 +689,17 @@ if ($a['install']['deploy'] !== 'keep') {
         }
     }
 
-    // The mappings again, now that the libraries exist.
+    // No second mapping pass here.
     //
-    // Sources are switched on before any library is created, and every library
-    // gets its own copy of the shared platforms - so the first pass mapped the
-    // shared rows and the copies made afterwards had none. A lookup resolves the
-    // same machine by slug regardless, but writing the rows means a mapping
-    // somebody edits later belongs to the platform they are looking at.
+    // There was one, and it always found nothing: sources are switched on before
+    // any library is created, so a library's own structure seeding already maps
+    // its platforms as part of `metadata_platforms` - one of the parts every new
+    // library gets.
     //
-    // Fills gaps only: metadata_seed_platform_map() never writes over an
-    // existing row.
-    //
-    // Per library, and only the ones this install just made. A mapping belongs
-    // to a library the way the rest of its structure does, and writing them
-    // across the instance is the shape that made a mapping look global when it
-    // is not.
-    $extra = 0;
-    foreach (all('SELECT id FROM libraries') as $lib) {
-        foreach (all('SELECT id, type FROM metadata_providers') as $p) {
-            $extra += seed_library_metadata_platforms(
-                (int) $lib['id'], (int) $p['id'], (string) $p['type']);
-        }
-    }
-    if ($extra > 0) {
-        say(sprintf('  %d further platform mapping%s for the new libraries',
-            $extra, $extra === 1 ? '' : 's'));
-    }
+    // It printed only when it wrote something, so an install looked identical
+    // either way and the redundancy was invisible. Left as a note rather than a
+    // loop, because a pass that does nothing is one somebody later has to work
+    // out the purpose of.
 }
 
 if ($savePath !== '') {

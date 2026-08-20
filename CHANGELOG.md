@@ -1,5 +1,62 @@
 # Changelog
 
+**Choosing a currency fetches the rates to convert by.**
+
+Setting SEK and still seeing dollars looks like the setting did not take. It did:
+there was no rate, because nothing had fetched any and the only way to was a
+command nobody had been told to run. Half a decision.
+
+Choosing a currency now fetches them - only when it changed, only when there is
+no rate for it yet, and a source having a bad afternoon is not an error: the
+setting saves, the conversion falls back to dollars, and the page says so.
+
+**And the page says so.** A price staying in dollars now carries the reason -
+"No exchange rate for SEK yet." - because that is a different problem from a
+setting that did not save, and looking identical to one is how somebody spends an
+hour on the wrong thing.
+
+## A list, not a text box
+
+Thirty-one currencies, the ones the rate source publishes - offering one they do
+not quote is offering a setting that cannot work. Each says whether this instance
+has a rate for it yet.
+
+The dollar is the first entry and reads "as the sources quote": choosing it means
+"do not convert", which is a real answer rather than the absence of one.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 207**.
+
+**A mapping pass that always found nothing.**
+
+The install output has a line for it and that line has never appeared:
+
+    PriceCharting: 8 platforms mapped
+    First library created
+    Shared example library created with 20 entries of its own
+
+The installer mapped platforms again after the libraries existed, on the
+reasoning that sources are switched on first and a library's own copies of the
+shared platforms are made afterwards. That reasoning was right and the pass was
+still redundant: **`metadata_platforms` is one of the parts every new library's
+structure seeding already runs**, and by then the sources are there.
+
+It printed only when it wrote something, so an install looked identical whether
+it did anything or not - which is how a pass doing nothing survived three builds
+of being read.
+
+Removed, with a note where it was. A pass that does nothing is one somebody later
+has to work out the purpose of.
+
+Verified rather than reasoned: both libraries an install creates go through
+`seed_library_hardware()`, which takes every part by default and is where the
+mapping block lives.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 206**.
+
 **What was paid, in the money the rest of the page is in.**
 
 An entry records what somebody paid and the currency they paid in - which is

@@ -46,14 +46,19 @@ function settings_schema(): array
                     'max'     => 120,
                 ],
                 'display_currency' => [
-                    'kind'    => 'text',
+                    'kind'    => 'select',
                     'label'   => 'Currency',
-                    'help'    => 'Three letters - SEK, NOK, GBP, EUR. Prices come from markets '
-                               . 'that quote in dollars and are converted for display, at the rate '
-                               . 'for the day each one was observed. An amount with no rate to '
-                               . 'convert by is shown in dollars and says so.',
-                    'default' => '',
-                    'max'     => 3,
+                    'help'    => 'Prices come from markets that quote in dollars and are converted '
+                               . 'for display, at the rate for the day each one was observed. An '
+                               . 'amount with no rate to convert by is shown in dollars and says so.',
+                    'default' => 'USD',
+                    // The ones the rate source publishes, which is what can
+                    // actually be converted to.
+                    //
+                    // A free text field took anything - a typo, or a currency
+                    // nobody quotes - and both of those look like a setting that
+                    // works until a price stays in dollars with no explanation.
+                    'options' => currency_options(),
                 ],
                 'client_url' => [
                     'kind'  => 'url',
@@ -278,6 +283,72 @@ function syslog_facility_options(): array
 }
 
 /** Flat: every field in the schema, by name. */
+/**
+ * The currencies this instance can show money in.
+ *
+ * The European Central Bank's daily set, which is where the rates come from -
+ * offering one they do not publish would be offering a setting that cannot work.
+ *
+ * The dollar first because that is what the sources quote: choosing it means "do
+ * not convert", which is a real answer rather than the absence of one.
+ */
+function currency_options(): array
+{
+    $names = [
+        'USD' => 'US dollar - as the sources quote',
+        'EUR' => 'Euro',
+        'SEK' => 'Swedish krona',
+        'NOK' => 'Norwegian krone',
+        'DKK' => 'Danish krone',
+        'GBP' => 'Pound sterling',
+        'CHF' => 'Swiss franc',
+        'PLN' => 'Polish złoty',
+        'CZK' => 'Czech koruna',
+        'HUF' => 'Hungarian forint',
+        'RON' => 'Romanian leu',
+        'BGN' => 'Bulgarian lev',
+        'ISK' => 'Icelandic króna',
+        'TRY' => 'Turkish lira',
+        'CAD' => 'Canadian dollar',
+        'AUD' => 'Australian dollar',
+        'NZD' => 'New Zealand dollar',
+        'JPY' => 'Japanese yen',
+        'CNY' => 'Chinese yuan',
+        'HKD' => 'Hong Kong dollar',
+        'SGD' => 'Singapore dollar',
+        'KRW' => 'South Korean won',
+        'INR' => 'Indian rupee',
+        'IDR' => 'Indonesian rupiah',
+        'MYR' => 'Malaysian ringgit',
+        'PHP' => 'Philippine peso',
+        'THB' => 'Thai baht',
+        'ILS' => 'Israeli shekel',
+        'MXN' => 'Mexican peso',
+        'BRL' => 'Brazilian real',
+        'ZAR' => 'South African rand',
+    ];
+
+    // Which of them this instance actually has a rate for, so the list says
+    // whether a choice will work rather than leaving somebody to find out.
+    $have = [];
+    try {
+        foreach (all('SELECT DISTINCT quote FROM exchange_rates WHERE base = ?', ['USD']) as $row) {
+            $have[(string) $row['quote']] = true;
+        }
+    } catch (Throwable $e) {
+        // Before the table exists - during an install - every choice is simply
+        // unmarked.
+    }
+
+    $out = [];
+    foreach ($names as $code => $name) {
+        $out[$code] = $code === 'USD' || isset($have[$code])
+            ? $code . ' - ' . $name
+            : $code . ' - ' . $name . ' (no rate yet)';
+    }
+    return $out;
+}
+
 function settings_schema_fields(): array
 {
     $out = [];

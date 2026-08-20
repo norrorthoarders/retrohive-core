@@ -555,6 +555,15 @@ function api_valuation_shown(?array $v): ?array
     // Only when it is actually different. An instance showing dollars gets the
     // same object it always did rather than a second copy of one number.
     if (!$shown['converted']) {
+        // Why not, when this instance asked for something else.
+        //
+        // A price staying in dollars on an instance set to kronor looks like the
+        // setting did not take. It did; there is no rate to convert by, and that
+        // is a different problem with a different fix.
+        $want = display_currency();
+        if ($want !== (string) ($v['currency'] ?? 'USD')) {
+            $v['not_converted'] = 'No exchange rate for ' . $want . ' yet.';
+        }
         return $v;
     }
     $v['shown'] = [

@@ -334,6 +334,24 @@ function api_settings_update(): void
         set_setting($name, $value);
     }
 
+    // Choosing a currency fetches the rates to convert by.
+    //
+    // Without this the setting is only half a decision: everything carries on
+    // showing dollars until somebody runs the command, and nothing on the page
+    // says that is what is missing. Somebody who picks kronor has said what they
+    // want, and this is what it takes.
+    //
+    // Only when the currency changed, and only when there is no rate for it yet
+    // - a source that is having a bad afternoon should not be asked again on
+    // every unrelated save. A failure is not an error either: the setting is
+    // saved, the conversion falls back to dollars, and the entry page says so.
+    if (array_key_exists('display_currency', $checked)) {
+        $wanted = (string) $checked['display_currency'];
+        if ($wanted !== '' && $wanted !== 'USD' && exchange_rate($wanted) === null) {
+            exchange_rates_refresh();
+        }
+    }
+
     api_settings_show();
 }
 
