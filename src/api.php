@@ -941,7 +941,35 @@ function platform_to_api(array $r): array
         'color'           => $r['accent_color'],
         'description'     => $r['description'],
         'item_count'      => isset($r['n']) ? (int) $r['n'] : null,
+        // Which sections this platform belongs in.
+        //
+        // The column has always held them, the structure data has always shipped
+        // them - Blu-ray is video, CD is audio - and this never sent them. So
+        // the manage screen drew four unticked boxes for every platform, which
+        // reads as "the data does not say" rather than "the answer was dropped
+        // on the way here", and saving that row would have written the empty set
+        // back over a correct one.
+        //
+        // A list, because the column is a comma-separated string and every
+        // client would otherwise split it for itself and disagree about spaces.
+        'domains'         => domains_to_list($r['domains'] ?? null),
     ];
+}
+
+/**
+ * A domains column as a list.
+ *
+ * Empty rather than `['']` for a blank column: a platform in no section is a
+ * real state - somebody may be part-way through describing one - and a list
+ * holding one empty string is not the way to say it.
+ */
+function domains_to_list($raw): array
+{
+    $text = trim((string) $raw);
+    if ($text === '') {
+        return [];
+    }
+    return array_values(array_filter(array_map('trim', explode(',', $text)), 'strlen'));
 }
 
 /** A library, which *is* an access boundary. */
@@ -1146,7 +1174,10 @@ function credit_role_to_api(array $r): array
         'name'       => $r['name'],
         'slug'       => $r['slug'],
         'library_id' => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
-        'domains'    => ($r['domains'] ?? '') === '' ? [] : explode(',', (string) $r['domains']),
+        // The same helper the platforms use. This split its own and did not trim,
+        // so a column written as "hardware, software" by hand gave a domain
+        // called " software" that matched nothing.
+        'domains'    => domains_to_list($r['domains'] ?? null),
         'sort_order' => (int) ($r['sort_order'] ?? 100),
     ];
 }

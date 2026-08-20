@@ -1,5 +1,29 @@
 # Changelog
 
+**Platforms arrived with no sections.**
+
+Every Sections box on the manage screen was unticked - Blu-ray not video, CD not
+audio - on data that has always said otherwise. The column holds them, the
+shipped structure ships them, the sync writes them and the library copy carries
+them.
+
+`platform_to_api()` sent nine fields and `domains` was not one of them.
+
+So the screen drew four empty boxes for every platform, which reads as "the data
+does not say" rather than "the answer was dropped on the way here" - and saving
+one of those rows would have written the empty set back over a correct one.
+
+**Credit roles share the parsing now.** They had their own `explode`, which did
+not trim - so a column written "hardware, software" by hand yielded a domain
+called " software" that matched nothing. One helper for both.
+
+A blank column is an empty list rather than `['']`: a platform in no section is a
+real state, and a list holding one empty string is not the way to say it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 211**.
+
 **The engine could not start.**
 
     Cannot redeclare currency_options()
