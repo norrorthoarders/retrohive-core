@@ -642,6 +642,15 @@ if ($a['install']['metadata_sources']) {
                   $sources['added'])
         : 'Metadata sources already configured, or none answered');
 
+    // What each source can be asked about.
+    //
+    // A source that files by console needs a mapping and is useless without one,
+    // and that used to be invisible: the install said "switched on" and every
+    // lookup afterwards found nothing.
+    foreach ($sources['platforms'] ?? [] as $label => $n) {
+        note(sprintf('  %s: %d platform%s mapped', $label, $n, $n === 1 ? '' : 's'));
+    }
+
     // Named here as well as logged. An unattended install will not have anybody
     // reading this, which is why it goes to the log too - but somebody watching
     // should not have to go and look.

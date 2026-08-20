@@ -1237,6 +1237,12 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
     if ($year !== null) {
         $params['release_year'] = $year;
     }
+    // Whether a machine was named at all, as against named and unmapped.
+    //
+    // A source receives a console and never sees the platform id, so the two
+    // look identical from inside it - and the difference is the whole of what
+    // somebody needs to be told.
+    $params['platform_named'] = $platformId !== null;
     $remote = $platformId === null ? null : remote_platform_for((int) $provider['id'], $platformId);
 
     // A source that cannot search without a platform gets the one its definition
@@ -3661,14 +3667,20 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
     if ($remotePlatform === null || trim($remotePlatform) === '') {
         // Their pages are filed by console and there is no page for a title
         // without one. Said plainly rather than fetched and 404ed.
-        // Said with the platform in it.
+        // Which of the two situations this is.
         //
-        // "map this platform first" without naming which one is a sentence
-        // somebody reads twice: on the command line it appeared after a
-        // `--platform=pc` that had been silently ignored, and read as the
-        // mapping being missing rather than the flag not arriving.
-        return [[], 'PriceCharting files by console and this lookup arrived with no platform. '
-                  . 'Pass one, or map this library\'s platform to one of theirs.'];
+        // A source is handed a console, not a platform id, so it cannot tell
+        // "nobody named a machine" from "one was named and has no mapping" - and
+        // the message said the first when the truth was usually the second. That
+        // sent somebody looking at the lookup rather than at the source's
+        // mapping, which is where the answer was.
+        //
+        // The caller knows, so the caller says, through `params`.
+        $named = !empty($params['platform_named']);
+        return [[], $named
+            ? 'PriceCharting files by console, and this library\'s platform is not '
+              . 'mapped to one of theirs. Set the mapping on the source.'
+            : 'PriceCharting files by console and this lookup arrived with no platform.'];
     }
 
     $base = rtrim((string) ($params['endpoint'] ?? 'https://www.pricecharting.com'), '/');

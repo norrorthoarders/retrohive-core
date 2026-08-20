@@ -1,5 +1,36 @@
 # Changelog
 
+**The installer switched sources on and left them unable to answer.**
+
+Adding a source through the API seeds its platform mappings - what it calls each
+of this instance's machines. The installer inserted the row and stopped.
+
+So every source that files by console came out of a **fresh install with nothing
+mapped**, answered "no platform" at every lookup, and nothing in the install
+output suggested a step had been missed. A reinstall did not help, because the
+reinstall was where it went wrong.
+
+**Six sources, not one.** Wikidata, Wikimedia Commons, TheGamesDB, IGDB,
+OpenRetro and PriceCharting all file by platform and all ship a mapping.
+PriceCharting is only where it was noticed - the others degrade quietly, because
+a source that also works without a platform just returns worse results.
+
+The installer seeds them now and says how many each got, so a source with none is
+visible in the output rather than three lookups later.
+
+## "No platform" when the platform was there
+
+A source is handed a console, never a platform id, so it cannot tell "nobody
+named a machine" from "one was named and has no mapping". The message said the
+first when the truth was almost always the second - which sent somebody looking
+at the lookup rather than at the source's mapping, where the answer was.
+
+The caller knows which it is, so the caller says.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 189**.
+
 **A PC lookup was searching the Amiga section.**
 
 The command line found Doom-1993 and the web found nothing, from the same code -

@@ -1468,6 +1468,10 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
 
     $added   = 0;
     $skipped = [];
+    // How many platforms each source can be asked about, for the report below -
+    // a source that files by console and mapped none is the state that used to
+    // pass silently.
+    $platformsMapped = [];
 
     // Named in the answer file and not a source this engine has.
     //
@@ -1609,16 +1613,31 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
             continue;
         }
 
-        insert_row('metadata_providers', [
+        $providerId = insert_row('metadata_providers', [
             'name'       => (string) ($def['label'] ?? $type),
             'type'       => (string) $type,
             'params'     => json_encode($params),
             'priority'   => 100,
             'is_enabled' => 1,
         ]);
+
+        // And what it calls each of our platforms.
+        //
+        // The API's create path has always done this; the installer inserted the
+        // row and stopped - so a source that files by console came out of a
+        // fresh install unable to answer anything, and said "no platform" at
+        // every lookup. Nothing in the install output suggested a step had been
+        // missed.
+        //
+        // A source with no map in the structure file gets nothing and needs
+        // nothing: MusicBrainz has no console concept at all.
+        $mapped = metadata_seed_platform_map($providerId, (string) $type);
+        if ($mapped > 0) {
+            $platformsMapped[(string) ($def['label'] ?? $type)] = $mapped;
+        }
         $added++;
     }
 
-    return ['added' => $added, 'skipped' => $skipped];
+    return ['added' => $added, 'skipped' => $skipped, 'platforms' => $platformsMapped];
 }
 
