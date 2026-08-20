@@ -1,0 +1,152 @@
+<!-- A trimmed copy of https://www.pricecharting.com/game/amiga/maniac-mansion
+     as it was served on 20 Aug 2026, keeping only the parts this parser reads.
+
+     Kept verbatim rather than written from memory: the whole reason this file
+     exists is that the page looks obvious and is not - the visible number in a
+     price cell is the change, not the price. A fixture somebody typed out from
+     what they expected would reproduce the expectation rather than the page. -->
+<table id="price_data" class="info_box">
+    <tbody>
+        <tr>
+            <td id="used_price">
+                <span class="price js-price">
+                $99.00
+                </span>
+                    <span class="change" title="dollar change from last update">
+                    <span class="js-price">$0.00</span>
+                    </span>
+            </td>
+            <td id="complete_price">
+                <span class="price js-price">
+                $272.40
+                </span>
+                    <span class="change" title="dollar change from last update">
+                    -<span class="js-price">$0.86</span>
+                    </span>
+            </td>
+            <td id="new_price">
+                <span class="price js-price">
+                $545.00
+                </span>
+                    <span class="change" title="dollar change from last update">
+                    -<span class="js-price">$2.00</span>
+                    </span>
+            </td>
+            <td id="graded_price" class="tablet-portrait-hidden">
+                <span class="price js-price">
+                $599.50
+                </span>
+                    <span class="change" title="dollar change from last update">
+                    -<span class="js-price">$2.20</span>
+                    </span>
+            </td>
+            <td id="box_only_price" class="tablet-portrait-hidden">
+                <span class="price js-price">
+                $109.30
+                </span>
+                    <span class="change" title="dollar change from last update">
+                    -<span class="js-price">$34.92</span>
+                    </span>
+            </td>
+            <td id="manual_only_price" class="tablet-portrait-hidden">
+                <span class="price js-price">
+                $68.32
+                </span>
+                    <span class="change" title="dollar change from last update">
+                    -<span class="js-price">$21.82</span>
+                    </span>
+            </td>
+        </tr>
+        <tr class="sales_volume">
+            <td class="js-show-tab" data-show-tab="completed-auctions-used">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">1 sale per year</a>
+</td>
+            <td class="js-show-tab" data-show-tab="completed-auctions-cib">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">3 sales per year</a>
+</td>
+            <td class="js-show-tab" data-show-tab="completed-auctions-new">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">rare</a>
+</td>
+            <td class="js-show-tab tablet-portrait-hidden" data-show-tab="completed-auctions-graded">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">rare</a>
+</td>
+            <td class="js-show-tab tablet-portrait-hidden" data-show-tab="completed-auctions-box-only">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">rare</a>
+</td>
+            <td class="js-show-tab tablet-portrait-hidden" data-show-tab="completed-auctions-manual-only">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">rare</a>
+</td>
+        </tr>
+    </tbody>
+
+    <!-- The same six repeated for a narrow screen. A parser that counts rather
+         than keys would read every volume twice. -->
+    <tbody>
+        <tr class="additional_data">
+            <td id="graded_price">
+                <span class="price js-price" title="current value in Graded condition">
+                $599.50
+                </span>
+                <span class="change" title="dollar change from last update">
+                -<span class="js-price">$2.20</span>
+                </span>
+            </td>
+            <td id="box_only_price">
+                <span class="price js-price" title="current Box Only value">
+                $109.30
+                </span>
+            </td>
+            <td id="manual_only_price">
+                <span class="price js-price" title="current Manual Only value">
+                $68.32
+                </span>
+            </td>
+        </tr>
+        <tr class="additional_data">
+            <td class="js-show-tab" data-show-tab="completed-auctions-graded">
+<span class="tablet-portrait-hidden">volume:&nbsp;</span>
+<a href="#">rare</a>
+</td>
+        </tr>
+    </tbody>
+</table>
+
+<div id="price_comparison">
+    <div id="tab-bar">
+        <div class="tab selected completed-auctions-used">
+            Loose
+            <span class="twelve-hundred-px-hidden"> Sold Listings</span>
+            <span class="phone-landscape-hidden">(7)</span>
+        </div>
+        <div class="tab available completed-auctions-cib">
+            CIB
+            <span class="twelve-hundred-px-hidden"> Sold Listings</span>
+            <span class="phone-landscape-hidden">(17)</span>
+        </div>
+        <div class="tab available completed-auctions">
+            All <span class="twelve-hundred-px-hidden"> Sold Listings</span>
+            <select id="completed-auctions-condition">
+                <option value=""></option>
+                <option value="completed-auctions-used">Loose (7)</option>
+                <option value="completed-auctions-cib">CIB (17)</option>
+                <option value="completed-auctions-new">New (0)</option>
+                <option value="completed-auctions-graded">Graded New (0)</option>
+                <option value="completed-auctions-grade-three">Graded CIB (0)</option>
+                <option value="completed-auctions-box-only">Box<span class="tablet-portrait-hidden"> Only<span>
+ (0)</option>
+                <option value="completed-auctions-manual-only">Manual<span class="tablet-portrait-hidden"> Only<span>
+ (0)</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<table id="attribute">
+    <tr><td class="title">PriceCharting ID:</td><td class="details">67001</td></tr>
+</table>

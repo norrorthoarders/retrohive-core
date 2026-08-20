@@ -897,11 +897,15 @@ function answers_export_json(array $v): string
     ];
     if (function_exists('metadata_provider_types')) {
         foreach (metadata_provider_types() as $type => $def) {
-            $keyed = !empty($def['needs_key']);
-            $mine  = $v['metadata'][$type] ?? [];
+            // `opt_in` behaves like `needs_key`: off unless named. A source can
+            // be free to reach and still be somebody's decision - PriceCharting
+            // needs no key and its terms sell what its pages give away.
+            $optional = !empty($def['needs_key']) || !empty($def['opt_in']);
+            $keyed    = !empty($def['needs_key']);
+            $mine     = $v['metadata'][$type] ?? [];
             $entry = [
                 'enable' => (bool) ($mine['enable']
-                    ?? ($keyed ? false : ($v['install']['metadata_sources'] ?? true))),
+                    ?? ($optional ? false : ($v['install']['metadata_sources'] ?? true))),
             ];
             // The credentials, and any other blank a source cannot run without.
             //
@@ -1066,8 +1070,12 @@ function answers_export(array $v): string
                      . (isset($def['homepage']) ? ' - ' . (string) $def['homepage'] : '');
             // Written as true and false rather than 1 and 0: the scanner reads
             // both, and a file somebody edits by hand should say what it means.
+            // `opt_in` behaves like `needs_key` here: off unless named. A
+            // source can be free to reach and still be somebody's decision - see
+            // PriceCharting, whose terms sell what its pages give away.
+            $optional = $keyed || !empty($def['opt_in']);
             $on = $v['metadata'][$type]['enable']
-                ?? ($keyed ? false : ($v['install']['metadata_sources'] ?? true));
+                ?? ($optional ? false : ($v['install']['metadata_sources'] ?? true));
             $lines[] = $type . '.enable = ' . ($on ? 'true' : 'false');
             if (!$keyed) {
                 continue;
@@ -1495,6 +1503,7 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
         // "switch on the lookup sources" has always meant the ones that need no
         // account, and reading it as "all of them" would report four failures on
         // every install that did not mention them.
+        $optIn  = $keyed || !empty($def['opt_in']);
         $wanted = array_key_exists('enable', $mine)
             ? (bool) $mine['enable']
             // Credentials with no `enable` line count as yes.
@@ -1503,7 +1512,7 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
             // plainly as a flag would; making them write a second line to mean
             // it is a trap that fails silently, and a silent nothing is the
             // worst answer an installer can give.
-            : ($keyed ? $given !== [] : $default);
+            : ($optIn ? $given !== [] : $default);
         if (!$wanted) {
             continue;
         }

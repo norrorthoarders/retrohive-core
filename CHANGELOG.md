@@ -1,5 +1,264 @@
 # Changelog
 
+**PriceCharting is switchable from the answer file, and needs no key.**
+
+    "metadata": { "agents": { "pricecharting": { "enable": true } } }
+
+The API token is gone from the definition. Their pages answer a plain cURL fetch
+with a proper User-Agent - checked against the live page, not assumed - so the
+paid path is not the only path, and asking for a token that nothing reads was a
+requirement invented rather than found.
+
+`metadata_search_pricecharting()` is written. Their product pages are addressable
+- `/game/{console}/{slug}` - so this fetches by URL rather than scraping a search
+page. The slug is the title lowercased and hyphenated, which is a guess at their
+scheme rather than a documented rule: a miss is a 404 and reported as one.
+
+One candidate or none. This source does not answer "which release is this", so
+offering a list to choose from would invite a decision there is nothing to
+decide. The six prices ride under `prices`, where nothing walking a candidate's
+fields can mistake one for a fact about the release.
+
+## Off unless somebody says so
+
+`needs_key` is what usually makes a source opt-in, and this one needs no key. It
+is still off by default, for a different reason: **their terms sell access to
+what these pages give away**, and that decision belongs to whoever runs the
+instance rather than to a default in this file.
+
+`opt_in` is the flag. It behaves exactly like `needs_key` in both the writer and
+the install step - named in the answer file or not switched on, whatever
+`install.metadata_sources` says.
+
+Tested end to end: a file naming it is accepted, reads back, and switches on that
+source and no other; a file that never mentions it does not switch it on even
+with the general default set.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 171**.
+
+**The whole product page reads.**
+
+    loose        $99.00    1 sale per year    7 sales
+    cib          $272.40   3 sales per year   17 sales
+    new          $545.00   rare               0 sales
+    graded       $599.50   rare               0 sales
+    box_only     $109.30   rare               0 sales
+    manual_only  $68.32    rare               0 sales
+    PriceCharting ID: 67001
+
+Prices, the volume phrase and the completed-sale count for all six bands, plus
+the id so a later fetch finds the same page without guessing at a title.
+
+**Volume is kept in the source's own words** - "1 sale per year", "rare" - rather
+than turned into a number. Normalising "rare" would invent precision they did not
+offer, and the phrase is the honest thing to put beside a price.
+
+**A zero count is kept**, and it is the most useful thing on the page: it says a
+price came from something other than sales of this exact thing, which is the
+difference between a number nobody should trust and one nobody has tested.
+
+Both are keyed on the tab name - `completed-auctions-used`, `box-only` with a
+hyphen where the price cell has an underscore - rather than on position. The page
+repeats the last three cells in a second block for narrow screens, so anything
+walking the row in order reads three of the six twice. The counts come from the
+"All Sold Listings" select rather than the tabs, because the tabs hide some at
+narrow widths and a hidden band still has a count.
+
+## The fixture, and what it does not prove
+
+`tests/fixtures/pricecharting-maniac-mansion.html` is a trimmed copy of the page
+as served, kept verbatim. Written from memory it would reproduce whatever the
+writer expected - and the expectation here was wrong twice already, about which
+number in a cell is the price and about what `box_only` means.
+
+**On the page as served the price comes first**, so a parser with neither the
+sign rule nor the zero rule reads it correctly by luck. That was checked by
+removing both rules and watching the fixture pass anyway.
+
+Those rules are tested separately against orderings the fixture does not contain,
+and removing them fails that check. Two checks that overlap is better than one
+covering less than its name claims.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 170**.
+
+**The numbers on that page are not the prices.**
+
+The markup came back with six cells carrying stable ids - `used_price`,
+`complete_price`, `new_price`, `graded_price`, `box_only_price`,
+`manual_only_price`, in a table called `price_data`. Ids rather than layout
+classes, which is a firmer thing to parse against than the list page offered.
+
+The values a crude read finds are **$0.00, $0.86, $2.00, $2.20, $34.92, $21.82**.
+The prices on the same page are **$99.00, $272.40, $545.00, $599.50, $109.30,
+$68.32**. Each cell holds two spans - the price and the change since last time -
+and the change is the one a first parser finds.
+
+Six plausible wrong numbers per title, on every title, and invisible by
+inspection: $0.86 looks exactly like a price. The only one that would have raised
+an eyebrow is $0.00 against a loose Amiga game.
+
+Two rules tell them apart without depending on which span nests inside which:
+a leading minus disqualifies, because a change can be negative and a price never
+is; and zero disqualifies, which catches both a change of nothing and a band
+nobody has sold in. Tested against both nesting orders and against a change that
+comes first unsigned - the case the sign rule alone would miss.
+
+## A band that would have been priced wrong
+
+The table had `boxed_no_manual` as a band. The market quotes **`box_only`**,
+which is a box with *nothing in it*. A box with the game and no manual is a
+different object and most of the value, so matching them would have priced a
+playable boxed copy at what a spare box fetches.
+
+`boxed_no_manual` now has no band at all. Its real price sits between `loose` and
+`cib` and neither is it, and a page that says nothing is better than one that
+says the wrong number confidently.
+
+The bands are the market's six now, read from their ids rather than translated
+from this catalogue's vocabulary. Three match a state a shelf can be in; `new`,
+`graded` and `box_only` do not, and are stored anyway - somebody pricing a spare
+box should see what spare boxes fetch.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 169**.
+
+**The prices are in the HTML.**
+
+    curl -sS -A 'RetroHive/x (+...)' .../game/amiga/maniac-mansion | grep -c 'used_price'
+    1
+
+That settles what the first scraper raised: its headless Chrome was that author's
+choice, not something the site forces. A plain cURL fetch with a proper
+User-Agent comes back with the page, so this can be an ordinary agent - the same
+shape as every other source here, no browser to install on the server.
+
+## The half that does not need the markup
+
+`src/prices.php`, which is everything the parser will hand its results to:
+
+**A band for every state a shelf records.** `cib`, `boxed_no_manual`, `loose` and
+`manual_only` map straight across; `digital` and `unknown` deliberately map to
+nothing. A download has no second-hand market, and putting a number against an
+entry that has not said what it is would be inventing one. Tested against the
+schema's own enum, so a seventh state cannot be added without this failing.
+
+**Sealed and graded are stored and never matched.** They exist in a market and
+not on a shelf - an entry cannot be sealed and say so - but somebody pricing a
+sealed copy should still see what sealed copies fetch.
+
+**A blank is not a zero.** Their pages show nothing for a band nobody has sold
+in, and zero would read as "worthless" where the truth is "no sales". Those are
+opposite answers, so a zero is skipped rather than stored.
+
+**Writing is idempotent.** The unique key is source, title, platform, band and
+the date the price was *true* - so importing a dated series twice writes it once,
+and two imports racing settle on the key rather than on who read first.
+
+The insert was checked against the table column by column: names, placeholders
+and every NOT NULL without a default. There is no database here to run it
+against, which is exactly why that check exists - and it caught `query()` for
+`q()` before it ever ran.
+
+## What is still needed
+
+The markup around those prices, from the server. Guessing it from a screenshot is
+how a parser gets written against markup nobody has seen - and the class names
+from the *list* page may not be what the per-game page uses. Two commands are in
+`docs/PRICING.md`.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 168**.
+
+**The second scraper says the first one's browser may not be needed.**
+
+`phantomeralphay/pricecharting-product-details-scraper` reads the per-game page
+rather than the console list, and its documented output changes three
+conclusions.
+
+**It mentions no browser.** Its stated requirements are retries and proxy
+support - the vocabulary of an HTTP client meeting rate limits, not of a page
+that cannot be read without JavaScript. If accurate, the first scraper's Chrome
+was one author's choice rather than a hard requirement.
+
+**There is a comparison endpoint** - `/compare?uids=R3560883&conditions=1` -
+returning dated points per condition, prices in cents as integers. A structured
+series is a far better thing to read than a rendered table, and it means a first
+fetch can **backfill months of history** rather than accumulating one row a month
+from now on. `price_observations` already dates a row by when the price was true
+rather than when it was fetched, so that import is idempotent without a change.
+
+**The completed sales are itemised** - each eBay sale behind a price with its
+date, title, amount and platform. That is the listing count in the screenshot,
+with the sales attached rather than counted.
+
+**None of it is verified.** It is a README from a repository that is largely an
+advertisement for a scraping agency, and their site is not reachable from where
+this was written. The claims may be accurate, aspirational, or describing a page
+that has since changed.
+
+## The experiment, written down so it is not reinvented
+
+Two cURL commands, in `docs/PRICING.md`: fetch the game page and count
+`used_price` in the response, then fetch the comparison endpoint. Prices in the
+HTML means a plain agent is enough and this is a normal source. Nothing there
+means the browser is real. A 403 is the site declining, which is an answer too.
+
+Ten minutes from a machine that can reach them, rather than a project.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 167**.
+
+**What the community scrapers show about PriceCharting.**
+
+`markfoster314/Pricecharting-Scraper` was worth reading, and what it shows is not
+encouraging.
+
+**It drives a real Google Chrome through Selenium.** Not for convenience: a
+scraper needs a headless browser rather than an HTTP request when plain requests
+do not come back with the content. Either the table is rendered by JavaScript or
+the site refuses clients that do not look like browsers - and both are the site
+saying no in the way sites say it.
+
+This engine fetches with cURL. Every agent here is a request and a parse; one
+needing Chrome installed on the server is not another agent, it is a second kind
+of thing to deploy, patch and watch break on every markup change.
+
+**It also reads a different page.** It scrapes `/console/{name}` - the list of
+every title on a platform - and takes three columns from it: `td.used_price`,
+`td.cib_price`, `td.new_price`, out of `#games_table`. The per-game page has six
+prices, the volume line and the sold-listing counts, and none of that is in the
+list table. So the example gets half of what made this worth having.
+
+Those class names are recorded in `docs/PRICING.md` because they were read rather
+than guessed. The per-game page's are not: guessing a parser from a screenshot
+would be inventing markup nobody has seen.
+
+## Three options, written down rather than chosen
+
+**Pay for the API** - a token, a request, a JSON parse, which is what every other
+agent already is and what the existing `needs_key` machinery covers.
+**Scrape with a browser** - works until a class name changes or the check that
+made Chrome necessary tightens, and has to be squared with terms that sell the
+thing being taken.
+**Neither yet** - the table, the bands and the reasoning are in place for whenever
+one of the two is decided.
+
+Their site is not reachable from where this was written, so their terms have not
+been read. What is clear from the scraper is that the site behaves like one that
+does not want to be read by scripts, which is worth weighing before building
+around it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 166**.
+
 **PriceCharting, declared and not yet built.**
 
 It answers a question none of the other sources do - what a copy is worth rather

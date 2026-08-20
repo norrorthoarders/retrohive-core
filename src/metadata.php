@@ -463,22 +463,40 @@ function metadata_provider_types(): array
                           . 'whether a price means anything at all. Games and machines both, and '
                           . 'the home computers are covered as well as the consoles. Needs a paid '
                           . 'API token; there is no free tier.',
-            // Their API is sold with a token, and the pages are public. Reading
-            // pages a site sells access to is a licensing question rather than a
-            // technical one, so this asks for the token and does nothing without
-            // one - which leaves the decision with whoever runs the instance.
-            'needs_key' => true,
+            // No key.
+            //
+            // Their API is sold with a token and the pages are public, and a
+            // plain cURL fetch with a proper User-Agent comes back with the
+            // prices - which was checked against the live page rather than
+            // assumed. The community scrapers that drive a headless Chrome do
+            // not need to; that was one author's choice.
+            //
+            // Reading pages a site also sells access to is a licensing question
+            // rather than a technical one, and the answer belongs to whoever
+            // runs the instance. `enable` in the answer file is where they give
+            // it: off unless somebody says otherwise, like every other source
+            // that costs somebody something.
+            'needs_key' => false,
             // Both: they price machines the same way they price games, which is
             // unusual among these sources and the reason this is worth having on
             // a hardware shelf too.
             'domains'   => ['software', 'hardware'],
             'homepage'  => 'https://www.pricecharting.com/api-documentation',
-            'credentials' => ['api_key' => ['label' => 'API token', 'secret' => true]],
             'filters_by_platform' => true,
             'probe'     => 'Maniac Mansion',
+            // Off unless somebody says otherwise, even though it needs no key.
+            //
+            // `needs_key` is what usually makes a source opt-in, and this one is
+            // opt-in for a different reason: their terms sell access to what
+            // these pages give away, and reading them is a decision for whoever
+            // runs the instance rather than a default this file should make on
+            // their behalf.
+            'opt_in'    => true,
             'params'    => [
-                'endpoint' => 'https://www.pricecharting.com/api',
-                'api_key'  => '',
+                // The site root. Their pages are what this reads; the /api
+                // suffix an older configuration may carry is stripped by the
+                // search rather than requiring every instance to be edited.
+                'endpoint' => 'https://www.pricecharting.com',
                 'currency' => 'USD',
                 'timeout'  => 15,
             ],
@@ -494,17 +512,6 @@ function metadata_provider_types(): array
             // records its own completeness, which is the join that makes them
             // useful rather than five of them wasted.
             'kind'      => 'prices',
-            // Declared, and not yet implemented.
-            //
-            // metadata_search() answers "No implementation for provider type" and
-            // says so in the log, which is what an installer probing this will
-            // report - a source that announces itself and does nothing is worse
-            // than one that is honest about being unfinished.
-            //
-            // The table it will write to exists: price_observations, migration
-            // 016. What is left is the fetch and the mapping from their six
-            // bands to ours, and the licensing question in docs/PRICING.md.
-            'unimplemented' => true,
         ],
         'igdb' => [
             'label'     => 'IGDB',
@@ -3481,6 +3488,77 @@ function igdb_parse_search(string $json): array
  * Scoped to a platform whenever one is mapped, because /browse/t is roughly a
  * megabyte and /browse/t/amiga is a fraction of it.
  */
+/**
+ * PriceCharting, by URL rather than by search.
+ *
+ * Their product pages are addressable - `/game/{console}/{slug}` - and the slug
+ * is the title lowercased with punctuation dropped and spaces hyphenated. That
+ * is a guess at their scheme rather than a documented rule, so a miss is a 404
+ * and reported as one; it is still better than scraping a search page.
+ *
+ * A single candidate, or none. This source does not answer "which release is
+ * this" - it answers "what is a copy worth" - so offering a list to choose from
+ * would be inviting a decision there is nothing to decide.
+ *
+ * The prices ride on the candidate under `prices`, where api_metadata_apply()
+ * can find them. They are not fields on the entry and must never be applied as
+ * though they were: see docs/PRICING.md.
+ */
+function metadata_search_pricecharting(array $params, string $title, ?string $remotePlatform): array
+{
+    if ($remotePlatform === null || trim($remotePlatform) === '') {
+        // Their pages are filed by console and there is no page for a title
+        // without one. Said plainly rather than fetched and 404ed.
+        return [[], 'PriceCharting files by console; map this platform to one of theirs first.'];
+    }
+
+    $base = rtrim((string) ($params['endpoint'] ?? 'https://www.pricecharting.com'), '/');
+    // The endpoint default points at their API for the paid path. A page fetch
+    // wants the site root, so an /api suffix is dropped rather than requiring
+    // every existing configuration to be edited.
+    $base = preg_replace('#/api$#', '', $base);
+    $timeout = (int) ($params['timeout'] ?? 15);
+
+    $slug = pricecharting_slug($title);
+    $url  = $base . '/game/' . rawurlencode(strtolower(trim($remotePlatform))) . '/' . $slug;
+
+    [$body, $err] = metadata_http_get($url, ['Accept: text/html'], $timeout);
+    if ($err !== null) {
+        return [[], 'PriceCharting: ' . $err];
+    }
+
+    $read = pricecharting_observations_from_html((string) $body);
+    if ($read['observations'] === []) {
+        return [[], null];
+    }
+
+    return [[[
+        'remote_id' => $read['external_id'],
+        'title'     => $title,
+        'platform'  => $remotePlatform,
+        'url'       => $url,
+        // What this source is actually for. Kept under its own key so nothing
+        // that walks a candidate's fields can mistake a price for a fact about
+        // the release.
+        'prices'    => $read['observations'],
+    ]], null];
+}
+
+/**
+ * A title as their URLs spell it.
+ *
+ * Lowercase, punctuation dropped, spaces hyphenated - which is what their own
+ * addresses look like: "Maniac Mansion" is `maniac-mansion`. An ampersand
+ * becomes "and" because a bare one would end the query string.
+ */
+function pricecharting_slug(string $title): string
+{
+    $s = strtolower(trim($title));
+    $s = str_replace('&', ' and ', $s);
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s) ?? '';
+    return trim($s, '-');
+}
+
 function metadata_search_openretro(array $params, string $title, ?string $remotePlatform): array
 {
     metadata_rate_limit('openretro', (float) ($params['min_delay'] ?? 1.0));
