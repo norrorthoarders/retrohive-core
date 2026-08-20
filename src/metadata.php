@@ -3668,6 +3668,13 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
 
     $console = strtolower(trim($remotePlatform));
 
+    // The entry's release year, when there is an entry behind this.
+    //
+    // Read before the search rather than only before the fallback: it is what
+    // tells `doom` from `doom-1993` among the results, and reading it late meant
+    // the search picked the 2016 reboot and the year was never consulted.
+    $year = isset($params['release_year']) ? (int) $params['release_year'] : null;
+
     // Their search, filtered to the console afterwards.
     //
     // The results are links of the form /game/{console}/{slug}, so the console
@@ -3678,7 +3685,7 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         return [[], 'PriceCharting: ' . $err];
     }
 
-    $url = pricecharting_first_product_url((string) $found, $console, $base, $title);
+    $url = pricecharting_first_product_url((string) $found, $console, $base, $title, $year);
     if ($url === null) {
         // Their search redirects straight to the product when there is exactly
         // one match, so a page with no result links may already *be* the answer.
@@ -3707,7 +3714,6 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         // platform and nothing else - the contract every source shares. Passing
         // the entry through would change all fourteen of them for the benefit of
         // one, so the caller puts it where this source can find it.
-        $year = isset($params['release_year']) ? (int) $params['release_year'] : null;
         foreach (pricecharting_guess_slugs($title, $year) as $slug) {
             $guess = $base . '/game/' . rawurlencode($console) . '/' . $slug;
             [$page, $guessErr] = metadata_http_get($guess, ['Accept: text/html'], $timeout);
@@ -3779,11 +3785,19 @@ function pricecharting_guess_slugs(string $title, ?int $year): array
     if ($base === '') {
         return [];
     }
-    $out = [$base];
+    // The year form first when we have one.
+    //
+    // `doom` and `doom-1993` are both real pages: the bare one is the 2016
+    // reboot. Asking for the bare slug first found it, and it looked like a
+    // success - so a 1993 shelf was priced against a 2016 release, and nothing
+    // about the answer said so.
+    //
+    // With no year of our own the bare slug is all there is, and it is right for
+    // any title they have not had to disambiguate.
     if ($year !== null && $year > 1900 && $year < 2100) {
-        $out[] = $base . '-' . $year;
+        return [$base . '-' . $year, $base];
     }
-    return $out;
+    return [$base];
 }
 
 /**
@@ -3805,7 +3819,7 @@ function pricecharting_slug(string $title): string
  * first would price an Amiga shelf at Jaguar money.
  */
 function pricecharting_first_product_url(string $html, string $console, string $base,
-                                         string $title = ''): ?string
+                                         string $title = '', ?int $year = null): ?string
 {
     // Absolute or relative.
     //
@@ -3833,7 +3847,7 @@ function pricecharting_first_product_url(string $html, string $console, string $
     $bestScore = 0;
     foreach (array_unique($m[1]) as $path) {
         $slug  = basename($path);
-        $score = pricecharting_slug_score($want, $slug);
+        $score = pricecharting_slug_score($want, $slug, $year);
         if ($score > $bestScore) {
             $bestScore = $score;
             $best = $path;
@@ -3850,7 +3864,18 @@ function pricecharting_first_product_url(string $html, string $console, string $
     // below is a sequel, a variant or a longer title that happens to contain the
     // word, and none of those is the thing that was asked about. A shelf with no
     // price is correct; a shelf priced off Doom III is not.
-    return $bestScore >= 90 && $best !== null ? $base . $best : null;
+    // A bare slug is not good enough when we know a year.
+    //
+    // `doom` scores 100 and passes the floor, but with 1993 on the shelf it is
+    // the 2016 reboot - and the year form is a page that exists and was never
+    // asked for. So the floor rises to the year match when there is a year: the
+    // search declines, and the fallback goes and asks for `doom-1993` directly.
+    //
+    // Costs one request in the case where the bare slug was right after all.
+    // Wrong prices on a shelf cost more.
+    $floor = $year === null ? 90 : 110;
+
+    return $bestScore >= $floor && $best !== null ? $base . $best : null;
 }
 
 /**
@@ -3872,28 +3897,52 @@ function pricecharting_first_product_url(string $html, string $console, string $
  * is a rule about this catalogue's subject matter rather than about strings, and
  * it is the reason `doom-1993` beats `doom-3`.
  */
-function pricecharting_slug_score(string $want, string $slug): int
+function pricecharting_slug_score(string $want, string $slug, ?int $year = null): int
 {
     if ($want === '' || $slug === '') {
         return 0;
     }
+
+    // The year the entry was released, when the catalogue knows it.
+    //
+    // This is what tells `doom` from `doom-1993`. Both are real pages: the bare
+    // one is the 2016 reboot and the suffixed one is the 1993 original, and an
+    // exact slug match picked the wrong game confidently. A title alone cannot
+    // separate them; the year on the shelf can.
+    if ($year !== null && $slug === $want . '-' . $year) {
+        return 110;
+    }
+
     if ($slug === $want) {
+        // Exactly the title, and nothing says which release. Right when there is
+        // only one; second best when the catalogue has a year and a page carries
+        // it.
         return 100;
     }
+
     if (!str_starts_with($slug, $want . '-')) {
-        // Not the same title at all. Still worth something if the words are
-        // there, so a lone result is used rather than discarded - but below
-        // anything that actually starts with what was asked for.
+        // Not the same title at all. Worth something if the words are there, so
+        // a lone result is not discarded outright - but far below the floor.
         return str_contains($slug, $want) ? 10 : 0;
     }
 
     $tail = substr($slug, strlen($want) + 1);
     if (preg_match('/^(19|20)\d{2}$/', $tail)) {
-        // A year: the same release, disambiguated.
+        // A year, and if we have one of our own this is not it: a page for a
+        // different release of the same title, which is exactly the thing not to
+        // take. Below the floor, deliberately.
+        if ($year !== null) {
+            return 30;
+        }
+        // Without a year of our own it is the best signal available: a title
+        // they have had to disambiguate.
         return 90;
     }
-    // A sequel or a variant. Shorter tails first, so `doom-3` is preferred to
-    // `doom-3-resurrection-of-evil` when nothing better exists.
+
+    // A sequel or a variant - `doom-3`, `doom-eternal`. A different game whose
+    // name starts the same, which is the trap this whole function exists for.
+    // Shorter tails first, so `doom-3` beats `doom-3-resurrection-of-evil` when
+    // nothing better exists at all.
     return max(20, 60 - strlen($tail));
 }
 

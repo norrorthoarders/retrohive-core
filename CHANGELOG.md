@@ -1,5 +1,67 @@
 # Changelog
 
+**`/game/pc-games/doom` is the 2016 reboot.**
+
+An exact slug match scored highest and took it, so a 1993 shelf was priced
+against a 2016 release - and nothing about the answer said so. Both pages are
+real, both have the right title, and a title alone cannot tell them apart.
+
+**The year on the shelf can.** A slug ending in the entry's own release year now
+outranks an exact match:
+
+    doom-1993   110   the release this entry is
+    doom        100   the title, and no word on which release
+    doom-iii     57   a different game
+    doom-2016    30   a year, and not ours - refused
+
+With no year of our own the bare slug is the best signal there is, and scores
+highest. With one, it is not enough on its own: the floor rises to the year
+match, the search declines, and the fallback asks for `doom-1993` directly -
+which is a page that exists and was never being asked for.
+
+The year form is asked first for the same reason. Asking for the bare slug first
+found the reboot, and finding it looked like success.
+
+**A year page that does not exist falls back to the bare slug** rather than
+giving up, so a title they have never had to disambiguate still works. One extra
+request in that case; wrong prices on a shelf cost more.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 185**.
+
+**The lookup tool showed everything except the answer.**
+
+    1. Doom
+       for       pc-games
+       url       https://www.pricecharting.com/game/pc-games/doom
+
+For a valuation source that is a title and an address - it says the right page
+was reached and nothing about whether the six numbers came off it. The same gap
+the trace closed one level out, left open one level in.
+
+    prices
+      loose            $99.00 1 sale per year · 7 seen
+      cib             $272.40 3 sales per year · 17 seen
+      new             $545.00 rare · 0 seen
+      graded          $599.50 rare · 0 seen
+      box_only        $109.30 rare · 0 seen
+      manual_only      $68.32 rare · 0 seen
+
+Each band, its price, and how much to believe it: the volume in the source's own
+words and the count of sales it was drawn from. A zero is shown rather than
+hidden - it is the difference between a number nobody should trust and one nobody
+has tested.
+
+## The search itself works
+
+`--platform=pc Doom` reaches `/game/pc-games/doom` and stops there. The bare slug
+was right for this title after all; the year form is still tried when it is not.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 184**.
+
 **The prices had nowhere to go.**
 
 The search read six of them and nothing consumed them. Applying a valuation

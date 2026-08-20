@@ -436,6 +436,28 @@ function report(array $source, string $query, array $results, ?string $error, ar
         if (!empty($r['images'])) {
             printf("     %s%-9s%s %d\n", $dim, 'photos', $off, count($r['images']));
         }
+
+        // What a source of prices actually found.
+        //
+        // The tool printed a title and a URL, which for a valuation source is
+        // everything except the answer - it says the right page was reached and
+        // nothing about whether the six numbers came off it. That is exactly the
+        // gap the trace was added to close, one level further in.
+        if (!empty($r['prices']) && is_array($r['prices'])) {
+            printf("     %s%-9s%s\n", $dim, 'prices', $off);
+            foreach ($r['prices'] as $price) {
+                $volume = trim(implode(' · ', array_filter([
+                    (string) ($price['volume_note'] ?? ''),
+                    ($price['sales_count'] ?? null) === null
+                        ? '' : $price['sales_count'] . ' seen',
+                ])));
+                printf("       %-14s %8s %s%s%s\n",
+                    (string) $price['band'],
+                    (($price['currency'] ?? 'USD') === 'USD' ? '$' : '')
+                        . number_format((float) $price['amount'], 2),
+                    $dim, $volume, $off);
+            }
+        }
         if (!empty($r['url'])) {
             printf("     %s%-9s%s %s\n", $dim, 'url', $off, (string) $r['url']);
         }
