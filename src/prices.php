@@ -93,9 +93,21 @@ function pricecharting_band_ids(): array
  */
 function display_currency(): string
 {
-    $set = setting('display_currency');
-    if (is_string($set) && preg_match('/^[A-Z]{3}$/', $set)) {
-        return $set;
+    // Both helpers are guarded.
+    //
+    // This unit is loaded by the agents as well as by the application, and an
+    // agent test loads metadata.php without helpers.php - so calling `setting()`
+    // there was a fatal inside a price parser that has nothing to do with
+    // display. Dollars is the honest answer when there is nothing to say
+    // otherwise: it is what the sources quote.
+    if (function_exists('setting')) {
+        $set = setting('display_currency');
+        if (is_string($set) && preg_match('/^[A-Z]{3}$/', $set)) {
+            return $set;
+        }
+    }
+    if (!function_exists('config')) {
+        return 'USD';
     }
     return strtoupper((string) (config('currency') ?: 'USD'));
 }
@@ -121,6 +133,11 @@ function exchange_rate(string $quote, ?string $on = null): ?float
     }
     $on = $on ?? date('Y-m-d');
 
+    // No database, no rate - which is a real answer rather than a crash. The
+    // parsers in this unit are exercised without one.
+    if (!function_exists('one')) {
+        return null;
+    }
     $row = one('SELECT rate FROM exchange_rates
                  WHERE base = ? AND quote = ? AND observed_on <= ?
               ORDER BY observed_on DESC LIMIT 1',
@@ -391,6 +408,38 @@ function pricecharting_observations_from_html(string $html, ?string $observedOn 
 }
 
 /**
+ * Every observation recorded for a title, newest first.
+ *
+ * With ids, unlike `price_history_for()` - that one draws a line and a line
+ * needs points rather than handles. This is the list somebody corrects from, and
+ * correcting a row means naming it.
+ *
+ * Every band together and in one query: the screen shows them as one table, and
+ * six queries for six bands would be six chances for the page to be half-right.
+ *
+ * @return list<array<string, mixed>>
+ */
+function price_observations_for(string $title, ?int $platformId): array
+{
+    $sql  = 'SELECT id, source, band, amount, currency, sales_count, volume_note,
+                    observed_on, url
+               FROM price_observations
+              WHERE title = ?';
+    $args = [$title];
+
+    // A platform of null is "no machine named", which is not the same as any
+    // machine - two titles on different consoles are different things.
+    if ($platformId === null) {
+        $sql .= ' AND platform_id IS NULL';
+    } else {
+        $sql .= ' AND platform_id = ?';
+        $args[] = $platformId;
+    }
+
+    return all($sql . ' ORDER BY observed_on DESC, band', $args);
+}
+
+/**
  * Record what a source said, for one title.
  *
  * @param array<int, array{band: string, amount: float, currency?: string,
@@ -485,14 +534,25 @@ function latest_price_for(?string $completeness, string $title, ?int $platformId
         return null;
     }
 
+    // A correction beats a quote for the same day.
+    //
+    // Correcting a row sets its source to `manual`, which changes the unique key
+    // - so a later sync inserts the market's figure beside it rather than over
+    // it, and `id DESC` alone would then show the machine's answer again and make
+    // the correction look like it had not saved.
+    //
+    // Bound rather than written into the SQL: an apostrophe inside a
+    // single-quoted string is how this stopped parsing the first time.
     $row = one(
         'SELECT amount, currency, band, observed_on, sales_count, volume_note
            FROM price_observations
           WHERE title = ? AND band = ?
             AND (platform_id = ? OR (platform_id IS NULL AND ? IS NULL))
-       ORDER BY observed_on DESC, id DESC
+       ORDER BY observed_on DESC, source = ? DESC, id DESC
           LIMIT 1',
-        [$title, $band, $platformId, $platformId]
+        // The last one is the ORDER BY's `source = ?`, which must follow the
+        // WHERE's placeholders in order.
+        [$title, $band, $platformId, $platformId, 'manual']
     );
     if ($row === null) {
         return null;

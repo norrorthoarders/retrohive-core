@@ -297,6 +297,11 @@ if (str_starts_with($path, '/api/')) {
 
         ['GET',    '#^/api/v1/items/(\d+)/images$#',      fn($id) => api_item_images_index((int) $id)],
         ['GET',    '#^/api/v1/items/(\d+)/prices$#',      fn($id) => api_item_prices((int) $id)],
+        // The observations themselves, for correcting one.
+        ['GET',    '#^/api/v1/items/(\d+)/observations$#',
+                                                            fn($id) => api_item_observations((int) $id)],
+        ['PATCH',  '#^/api/v1/observations/(\d+)$#',       fn($id) => api_observation_update((int) $id)],
+        ['DELETE', '#^/api/v1/observations/(\d+)$#',       fn($id) => api_observation_delete((int) $id)],
         ['POST',   '#^/api/v1/items/(\d+)/images$#',      fn($id) => api_item_images_upload((int) $id)],
         ['PATCH',  '#^/api/v1/images/(\d+)$#',            fn($id) => api_images_update((int) $id)],
         ['DELETE', '#^/api/v1/images/(\d+)$#',            fn($id) => api_images_delete((int) $id)],
@@ -373,6 +378,7 @@ if (str_starts_with($path, '/api/')) {
         ['GET',    '#^/api/v1/admin/system-status$#',      fn() => api_admin_system_status()],
         ['GET',    '#^/api/v1/admin/registration$#',       fn() => api_registration_show()],
         ['PATCH',  '#^/api/v1/admin/registration$#',       fn() => api_registration_update()],
+        ['GET',    '#^/api/v1/currencies$#',              fn() => api_currencies_index()],
         ['GET',    '#^/api/v1/platforms$#',               fn() => api_platforms_index()],
         ['POST',   '#^/api/v1/platforms$#',               fn() => api_platforms_create()],
         ['PATCH',  '#^/api/v1/platforms/(\d+)$#',          fn($id) => api_platforms_update((int) $id)],

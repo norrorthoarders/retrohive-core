@@ -1,5 +1,67 @@
 # Changelog
 
+**A recorded valuation can be corrected.**
+
+A market's quote is evidence rather than gospel - a different edition, a
+mispriced listing, or simply wrong for a shelf in another country. Nothing could
+change one: the observations table had no update or delete path, and the history
+query returned no ids to name a row by.
+
+The amount, how often one sells, and how many sales that came from. **Not the
+band, the title or the date** - those are what the row *is*, and changing one
+would be writing a different observation over this one rather than correcting it.
+
+**Zero is refused.** The source records "nobody has sold one" by not quoting a
+price; a zero typed here would read as "worth nothing", which is a different
+claim.
+
+## What happens on the next sync
+
+Correcting a row sets its source to `manual`, which changes the unique key - so a
+later sync inserts the market's figure **beside** it rather than over it, and
+nothing is lost either way.
+
+But `ORDER BY id DESC` alone would then show the machine's answer again and make
+the correction look like it had not saved. A correction now wins for its own day.
+Without one, the newest quote still does.
+
+## Permission, for a row that has no owner
+
+An observation belongs to a title and a machine, not to an entry - two shelves
+holding the same game share what the market said about it. So it is asked of an
+entry this account may write that matches, and there may be none even though the
+row exists.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 213**.
+
+**A valuation lookup shows what the prices come to here.**
+
+The table was headed "as published" and left at that, on the reasoning that these
+are what the source quoted before anything is recorded. True, and not the point:
+somebody looking at a valuation wants to know what it means for them, and being
+told to record it first and look again is a poor answer to a fair question.
+
+Both figures now. The published one leads, because it is the one that can be
+checked against the source.
+
+**`GET /currencies`** so a client can offer the list rather than keeping its own.
+
+## A parser that needed the whole application
+
+`display_currency()` calls `setting()` and `config()`, and `prices.php` is loaded
+by the metadata agents as well as by the application - so converting a candidate's
+prices fataled inside a price parser in every test that loads an agent without
+the helpers. Ten suites went red at once.
+
+Both are guarded, and so is the rate lookup: dollars is the honest answer when
+there is nothing to say otherwise, because it is what the sources quote.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 212**.
+
 **Platforms arrived with no sections.**
 
 Every Sections box on the manage screen was unticked - Blu-ray not video, CD not

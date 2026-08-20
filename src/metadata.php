@@ -3889,7 +3889,25 @@ function pricecharting_candidate(string $html, string $title, string $platform, 
         // What this source is actually for. Kept under its own key so nothing
         // that walks a candidate's fields can mistake a price for a fact about
         // the release.
-        'prices'    => $read['observations'],
+        // Each with what it comes to in the money this instance shows.
+        //
+        // The table was headed "as published" and left at that, on the reasoning
+        // that these are what the source quoted before anything is recorded.
+        // True, and not the point: somebody looking at a valuation wants to know
+        // what it means for them, and being told to record it first and look
+        // again is a poor answer to a fair question.
+        //
+        // The published figure stays - it is what the market said - and the
+        // converted one sits beside it.
+        'prices'    => array_map(static function (array $p): array {
+            $shown = in_display_currency((float) $p['amount'],
+                                         (string) ($p['currency'] ?? 'USD'),
+                                         $p['observed_on'] ?? null);
+            if ($shown['converted']) {
+                $p['shown'] = ['amount' => $shown['amount'], 'currency' => $shown['currency']];
+            }
+            return $p;
+        }, $read['observations']),
     ]], null];
 }
 

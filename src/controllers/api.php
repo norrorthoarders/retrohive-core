@@ -1325,6 +1325,19 @@ function api_guard_image_write(int $itemId): int
  * Platforms themselves are not access-controlled - filtering the table by
  * library membership was nonsense - but the counts hanging off them are.
  */
+/**
+ * What money a price can be recorded in.
+ *
+ * The same list the currency setting offers, so an entry cannot be given
+ * something the instance has no rate for without being told - each one says
+ * whether there is a rate yet.
+ */
+function api_currencies_index(): void
+{
+    api_require_auth();
+    api_ok(currency_options());
+}
+
 function api_platforms_index(): void
 {
     api_require_auth();
@@ -6413,6 +6426,144 @@ function api_category_sources_set(int $categoryId): void
         LOG_INFO, ['provider_id' => $providerId, 'category_id' => $categoryId]);
 
     api_category_sources($categoryId);
+}
+
+/**
+ * What has been recorded about what this entry is worth.
+ *
+ * With ids, so a figure somebody disagrees with can be corrected. A market's
+ * quote is evidence rather than gospel: it may be a different edition, a
+ * mispriced listing, or simply wrong for a shelf in another country.
+ */
+function api_item_observations(int $id): void
+{
+    api_require_auth();
+
+    $item = find_item($id);
+    if ($item === null || !can_read_library((int) $item['library_id'])) {
+        api_error('not_found', 'No catalogue entry with that id.', 404);
+    }
+
+    api_ok(array_map(static function (array $r): array {
+        return [
+            'id'          => (int) $r['id'],
+            'source'      => (string) $r['source'],
+            'band'        => (string) $r['band'],
+            'amount'      => (float) $r['amount'],
+            'currency'    => (string) $r['currency'],
+            'sales_count' => $r['sales_count'] === null ? null : (int) $r['sales_count'],
+            'volume_note' => $r['volume_note'],
+            'observed_on' => (string) $r['observed_on'],
+            'url'         => $r['url'],
+        ];
+    }, price_observations_for((string) $item['title'],
+                              $item['platform_id'] === null ? null : (int) $item['platform_id'])),
+        ['can_edit' => can_write_item($item)]);
+}
+
+/**
+ * The entry an observation belongs to, or nothing.
+ *
+ * An observation is keyed on a title and a platform rather than on an entry -
+ * two shelves holding the same game share what the market said about it. So
+ * permission is asked of an entry this account can see that matches, and there
+ * may be none even though the row exists.
+ */
+function observation_item(array $row): ?array
+{
+    $sql  = 'SELECT * FROM items WHERE title = ? AND deleted_at IS NULL';
+    $args = [(string) $row['title']];
+    if ($row['platform_id'] === null) {
+        $sql .= ' AND platform_id IS NULL';
+    } else {
+        $sql .= ' AND platform_id = ?';
+        $args[] = (int) $row['platform_id'];
+    }
+    foreach (all($sql, $args) as $item) {
+        if (can_write_item($item)) {
+            return $item;
+        }
+    }
+    return null;
+}
+
+/**
+ * Correct one observation.
+ *
+ * The amount, and what it says about how often one sells. Not the band, the
+ * title or the date: those are what the row *is*, and changing one would be
+ * writing a different observation over this one rather than correcting it.
+ */
+function api_observation_update(int $id): void
+{
+    api_require_auth();
+
+    $row = one('SELECT * FROM price_observations WHERE id = ?', [$id]);
+    if ($row === null || observation_item($row) === null) {
+        api_error('not_found', 'No observation with that id.', 404);
+    }
+
+    $in     = api_body();
+    $fields = [];
+
+    if (array_key_exists('amount', $in)) {
+        $amount = (float) $in['amount'];
+        if ($amount <= 0) {
+            // Zero is how the source says "nobody has sold one", and it is
+            // recorded by not recording a price at all. A zero typed here would
+            // read as "worth nothing", which is a different claim.
+            api_error('validation_failed', 'An amount must be more than nothing.', 422);
+        }
+        $fields['amount'] = $amount;
+    }
+    if (array_key_exists('sales_count', $in)) {
+        $fields['sales_count'] = $in['sales_count'] === null || $in['sales_count'] === ''
+            ? null
+            : max(0, (int) $in['sales_count']);
+    }
+    if (array_key_exists('volume_note', $in)) {
+        $note = trim((string) $in['volume_note']);
+        $fields['volume_note'] = $note === '' ? null : mb_substr($note, 0, 60);
+    }
+
+    if ($fields === []) {
+        api_error('validation_failed', 'Send an amount, a sales count or a volume note.', 422);
+    }
+
+    // The source becomes whoever typed it.
+    //
+    // A figure somebody corrected is no longer what PriceCharting said, and
+    // leaving their name on it would have the next sync overwrite it as though
+    // it were stale - `record_price_observations()` matches on source.
+    $fields['source'] = 'manual';
+
+    $sets = [];
+    $args = [];
+    foreach ($fields as $column => $value) {
+        $sets[] = $column . ' = ?';
+        $args[] = $value;
+    }
+    $args[] = $id;
+    q('UPDATE price_observations SET ' . implode(', ', $sets) . ' WHERE id = ?', $args);
+
+    log_event('metadata', 'price.corrected',
+        sprintf('observation %d corrected by hand', $id), LOG_INFO, ['observation_id' => $id]);
+
+    api_ok(one('SELECT * FROM price_observations WHERE id = ?', [$id]));
+}
+
+/** Forget one observation. */
+function api_observation_delete(int $id): void
+{
+    api_require_auth();
+
+    $row = one('SELECT * FROM price_observations WHERE id = ?', [$id]);
+    if ($row === null || observation_item($row) === null) {
+        api_error('not_found', 'No observation with that id.', 404);
+    }
+
+    q('DELETE FROM price_observations WHERE id = ?', [$id]);
+    api_ok(['removed' => 1]);
 }
 
 function api_metadata_providers_forget(int $id): void
