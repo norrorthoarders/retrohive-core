@@ -42,7 +42,7 @@ require APP_ROOT . '/src/metadata.php';
 $args = array_slice($argv, 1);
 $opts = ['source' => null, 'json' => false, 'raw' => false, 'limit' => 10,
          'list' => false, 'first' => false, 'all' => false, 'check' => false,
-         'platform' => null, 'verbose' => false, 'dump' => null];
+         'platform' => null, 'verbose' => false, 'dump' => null, 'trace' => false];
 $terms = [];
 
 foreach ($args as $a) {
@@ -53,6 +53,7 @@ foreach ($args as $a) {
     elseif ($a === '--all')       { $opts['all'] = true; }
     elseif ($a === '--check')     { $opts['check'] = true; }
     elseif ($a === '-v' || $a === '--verbose') { $opts['verbose'] = true; }
+    elseif ($a === '--trace')     { $opts['trace'] = true; }
     elseif (str_starts_with($a, '--dump='))    { $opts['dump'] = substr($a, 7); }
     elseif (str_starts_with($a, '--platform=')) { $opts['platform'] = substr($a, 11); }
     elseif ($a === '-h' || $a === '--help') { usage(); exit(0); }
@@ -98,6 +99,12 @@ if ($opts['check']) {
 
 if ($opts['verbose'] || $opts['dump'] !== null) {
     metadata_debug_on();
+}
+
+// Before anything fetches, so every request in this run is reported - including
+// the ones a search makes on the way to its answer.
+if ($opts['trace']) {
+    traceRequests();
 }
 
 $source = pickSource($opts['source']);
@@ -157,6 +164,7 @@ function usage(): void
     --raw           show every field returned, not just the interesting ones
     --first         just the best match, when you know what you want
     --limit=N       how many results to print (default 10)
+    --trace         every request a source makes, and what came back
     --list          what sources are available
     --help          this
 
@@ -259,6 +267,85 @@ function asSource(string $type, array $def, ?array $row): array
         'params'     => $params,
         'configured' => $row !== null,
     ];
+}
+
+/**
+ * Print every request a source makes, and enough of what came back to tell why
+ * a lookup found nothing.
+ *
+ * Three failures share one symptom. A source that reports "0 results" may not
+ * have fetched at all, may have fetched and been refused, or may have fetched
+ * something perfectly good and had the parser miss it - and from the outside
+ * they look identical.
+ *
+ * So this shows the URL, the status, the size, and for an HTML answer the links
+ * it actually contains. A parser looking for `/game/{console}/` against a page
+ * whose links are written some other way is visible in one line here and
+ * invisible everywhere else.
+ */
+function traceRequests(): void
+{
+    $GLOBALS['metadata_http_trace'] = static function (
+        string $url, $body, ?string $err, int $ms
+    ): void {
+        fwrite(STDERR, sprintf("\n  → %s\n", $url));
+        if ($err !== null) {
+            fwrite(STDERR, sprintf("    ✗ %s (%dms)\n", $err, $ms));
+            return;
+        }
+        $text = (string) $body;
+        fwrite(STDERR, sprintf("    ← %s in %dms\n", human_bytes(strlen($text)), $ms));
+
+        // Where it says it is, which is how a redirect to a product page shows
+        // up as something other than a search page.
+        if (preg_match('#<link[^>]*rel="canonical"[^>]*href="([^"]+)"#i', $text, $m)) {
+            fwrite(STDERR, '    canonical: ' . $m[1] . "\n");
+        }
+        if (preg_match('#<title[^>]*>(.*?)</title>#is', $text, $m)) {
+            fwrite(STDERR, '    title: ' . trim(preg_replace('/\s+/', ' ', $m[1])) . "\n");
+        }
+
+        // The links, deduplicated and shortened - a results page has hundreds
+        // and the shape of the first few is the whole answer.
+        if (preg_match_all('#href="([^"]+)"#i', $text, $m)) {
+            $paths = [];
+            foreach ($m[1] as $href) {
+                $path = parse_url($href, PHP_URL_PATH);
+                if (!is_string($path) || $path === '') { continue; }
+                // The first segment is what tells a product link from a menu.
+                $head = '/' . (explode('/', ltrim($path, '/'))[0] ?? '');
+                $paths[$head] = ($paths[$head] ?? 0) + 1;
+            }
+            arsort($paths);
+            $shown = array_slice($paths, 0, 8, true);
+            $parts = [];
+            foreach ($shown as $head => $n) { $parts[] = $head . ' ×' . $n; }
+            fwrite(STDERR, '    link paths: ' . implode(', ', $parts) . "\n");
+
+            // And the first few that look like a product, in full.
+            $products = [];
+            foreach ($m[1] as $href) {
+                if (str_contains($href, '/game/') && !in_array($href, $products, true)) {
+                    $products[] = $href;
+                }
+                if (count($products) >= 5) { break; }
+            }
+            if ($products !== []) {
+                fwrite(STDERR, "    product links:\n");
+                foreach ($products as $href) { fwrite(STDERR, '      ' . $href . "\n"); }
+            } else {
+                fwrite(STDERR, "    product links: none\n");
+            }
+        }
+    };
+}
+
+/** A size somebody can read at a glance. */
+function human_bytes(int $n): string
+{
+    if ($n < 1024) { return $n . 'B'; }
+    if ($n < 1024 * 1024) { return round($n / 1024) . 'kB'; }
+    return round($n / (1024 * 1024), 1) . 'MB';
 }
 
 /** Call whichever search function the source provides. */

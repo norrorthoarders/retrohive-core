@@ -946,6 +946,35 @@ function metadata_http_get(string $url, array $headers = [], int $timeout = 15, 
         return ($GLOBALS['metadata_http_stub'])($url, $headers, $timeout);
     }
 
+    // Every request, when somebody is watching.
+    //
+    // A source that answers "0 results" says nothing about *why*: whether it
+    // fetched at all, what came back, and what the parser made of it are three
+    // different failures with one symptom. `./bin/lookup.php --trace` sets this
+    // and prints each step.
+    //
+    // A closure rather than a flag, so nothing in the request path has to know
+    // what a terminal is.
+    $watch = $GLOBALS['metadata_http_trace'] ?? null;
+    if (is_callable($watch)) {
+        $started = microtime(true);
+        $answer  = metadata_http_get_raw($url, $headers, $timeout, $post);
+        $watch($url, $answer[0], $answer[1], (int) round((microtime(true) - $started) * 1000));
+        return $answer;
+    }
+
+    return metadata_http_get_raw($url, $headers, $timeout, $post);
+}
+
+/**
+ * The request itself, with nothing watching.
+ *
+ * Split out so the trace above can time it and report it without every caller
+ * growing a parameter it does not use.
+ */
+function metadata_http_get_raw(string $url, array $headers = [], int $timeout = 15, ?string $post = null): array
+{
+
     // With a way to reach whoever is running this.
     //
     // Wikimedia's policy asks for an address in the User-Agent and throttles

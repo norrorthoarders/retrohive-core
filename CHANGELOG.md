@@ -1,5 +1,46 @@
 # Changelog
 
+**A lookup can be watched.**
+
+    ./bin/lookup.php --trace --source=pricecharting --platform=pc Doom
+
+    → https://www.pricecharting.com/search-products?type=prices&q=Doom
+      ← 344kB in 412ms
+      canonical: https://www.pricecharting.com/search-products?q=Doom
+      title: Search results | PriceCharting
+      link paths: /console ×64, /game ×2, /market ×1
+      product links:
+        /game/pc-games/doom-1993
+
+"0 results" is three different failures wearing one face: it may not have
+fetched, it may have fetched and been refused, or it may have fetched something
+perfectly good and had the parser miss it. From outside they look identical.
+
+So this prints the URL, the size, where the page says it is, **the shape of its
+links**, and the first few that look like products. A parser matching
+`/game/{console}/` against a page whose links are written some other way is one
+line here and invisible everywhere else.
+
+The trace is a closure the request path calls when somebody is watching, so
+nothing in it has to know what a terminal is.
+
+## The metadata log could not be read
+
+Entries were filed as `metadata` correctly, and the viewer asking for that
+channel got nothing - because the query turned anything that was not `security`
+or `server` into `server`. Asking for the metadata stream searched the server
+one.
+
+`log_channels()` already exists and already lists all three. The comment on it
+describes this exact fault being fixed **on the writing side** - and it was left
+on the reading side, which is the half nobody checks when a tab shows zero.
+
+One list now, read by both.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 178**.
+
 **A search can ask one sort of source.**
 
 `?kind=details` asks the sources that say what a release is; `?kind=prices` asks

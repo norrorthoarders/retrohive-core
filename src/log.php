@@ -117,14 +117,25 @@ function log_server(string $event, string $message, int $severity = LOG_INFO, ar
 
 function log_entries(string $channel, array $filters = [], int $limit = 100, int $offset = 0): array
 {
-    // 'all' reads both streams. They are separate because they answer different
+    // 'all' reads every stream. They are separate because they answer different
     // questions, but "what happened at 14:32" is a third question that needs
     // them interleaved.
     $where = [];
     $args  = [];
     if ($channel !== 'all') {
         $where[] = 'channel = ?';
-        $args[]  = in_array($channel, ['security', 'server'], true) ? $channel : 'server';
+        // Against log_channels(), not a list written out here.
+        //
+        // This named 'security' and 'server' and quietly turned anything else
+        // into 'server' - so asking for the metadata channel queried for the
+        // server one and found nothing. Entries were being written correctly the
+        // whole time; only reading them was wrong, which is the half nobody
+        // checks when the tab shows zero.
+        //
+        // It is the same fault the comment on log_channels() describes, fixed
+        // on the writing side and left on the reading side. One list now, read
+        // by both.
+        $args[]  = in_array($channel, log_channels(), true) ? $channel : 'server';
     }
 
     if (!empty($filters['event'])) {
