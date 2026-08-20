@@ -1275,7 +1275,13 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
         'platform' => $remote,
     ];
 
-    $key    = metadata_cache_key($type, 'search', [$title, $remote]);
+    // The year is part of the question, so it is part of the key.
+    //
+    // Without it a search for Doom with 1993 on the shelf collided with one that
+    // had no year - and the second answered from the first's cache, which was
+    // the wrong release or nothing at all. Two different questions were sharing
+    // one answer because only two thirds of the question was being written down.
+    $key    = metadata_cache_key($type, 'search', [$title, $remote, $year]);
     $cached = metadata_cache_get($key);
     if ($cached !== null) {
         // Said plainly, because "0.001s" against a source that is slow is the

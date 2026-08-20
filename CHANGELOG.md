@@ -1,5 +1,27 @@
 # Changelog
 
+**Two questions were sharing one cached answer.**
+
+    pricecharting: "Doom" answered from cache, 0 results
+
+The key held the title and the platform and **not the year** - so a search for
+Doom with 1993 on the shelf answered from one that had no year at all. Different
+question, different answer, same key.
+
+Which also means the year rule added in build 185 was never exercised: every
+attempt since has come back from a cache written before it existed.
+
+The year is part of the question and is part of the key now. Two years differ,
+and no year differs from either.
+
+**Title with the year first, title alone second** - which is what the search
+already did, hidden behind that cache. `doom-1993` is asked for before `doom`,
+and the bare slug is only reached when the year form is not there.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 187**.
+
 **The price history was being kept and never read.**
 
 `price_history_for()` was written, called by nothing and tested by nothing - so
