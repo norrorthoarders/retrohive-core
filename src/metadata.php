@@ -1249,7 +1249,7 @@ function metadata_suggest_platform_map(array $remote): array
  *        signature for that would be the wrong shape.
  */
 function metadata_search(array $provider, string $title, ?int $platformId = null,
-                         ?int $year = null): array
+                         ?int $year = null, ?string $url = null): array
 {
     $title = trim($title);
     if ($title === '') {
@@ -1267,6 +1267,12 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
     // look identical from inside it - and the difference is the whole of what
     // somebody needs to be told.
     $params['platform_named'] = $platformId !== null;
+    // And the entry's own reference link, for a source that can recognise one of
+    // its own addresses - see PriceCharting, whose catalogue does not always
+    // name a release the way a shelf does.
+    if ($url !== null && $url !== '') {
+        $params['external_url'] = $url;
+    }
     $remote = $platformId === null ? null : remote_platform_for((int) $provider['id'], $platformId);
 
     // A source that cannot search without a platform gets the one its definition
@@ -1338,7 +1344,15 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
         return ['results' => [], 'error' => $why];
     }
 
-    [$results, $error] = $fn($params, $title, $remote);
+    // A third element, when a source has something to say about a miss.
+    //
+    // "0 results" is the same line whether a source was never asked, asked and
+    // refused, or asked three addresses that do not exist - and the third is the
+    // one somebody can act on. Optional: every other source returns two
+    // elements and is unaffected.
+    $answer  = $fn($params, $title, $remote);
+    [$results, $error] = $answer;
+    $note    = $answer[2] ?? null;
 
     $took = round((microtime(true) - $started) * 1000);
 
@@ -1385,9 +1399,12 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
         $pictures += count($one['images'] ?? []);
     }
     log_event('metadata', 'search.done',
-        sprintf('%s: "%s" gave %d result%s (%d image%s) in %dms',
+        sprintf('%s: "%s" gave %d result%s (%d image%s) in %dms%s',
             $logCtx['source'], $logCtx['title'], count($results),
-            count($results) === 1 ? '' : 's', $pictures, $pictures === 1 ? '' : 's', $took),
+            count($results) === 1 ? '' : 's', $pictures, $pictures === 1 ? '' : 's', $took,
+            // Only on a miss. A source that found something has said what it
+            // found, and the addresses it walked to get there are noise.
+            $results === [] && $note !== null ? ' - ' . $note : ''),
         LOG_INFO, $logCtx + ['results' => count($results), 'images' => $pictures, 'ms' => $took]);
 
     return ['results' => $results, 'error' => null];
@@ -1465,7 +1482,7 @@ function metadata_provider_tested_with(string $type, ?string $platformSlug): boo
  */
 function metadata_search_all(string $title, ?int $platformId = null, ?string $domain = null,
                              ?int $categoryId = null, ?string $kind = null,
-                             ?int $year = null): array
+                             ?int $year = null, ?string $url = null): array
 {
     $results  = [];
     $errors   = [];
@@ -1572,7 +1589,7 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
             && remote_platform_for((int) $provider['id'], $platformId) === null) {
             $unmapped[] = $provider['name'];
         }
-        $out = metadata_search($provider, $title, $platformId, $year);
+        $out = metadata_search($provider, $title, $platformId, $year, $url);
         if ($out['error'] !== null) {
             $errors[$provider['name']] = $out['error'];
             continue;
@@ -3716,6 +3733,26 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
 
     $console = strtolower(trim($remotePlatform));
 
+    // The entry's own link, when it already points at this source.
+    //
+    // Their catalogue does not always name a release the way a shelf does -
+    // Revenge of the Mutant Camels is Camels II, and a search for it turns up
+    // Attack of the Mutant Camels, which is Camels I. Matching those is not
+    // something a rule should do: they are different games and a wrong price is
+    // worse than none.
+    //
+    // So somebody can settle it by hand once, by putting the product address in
+    // the entry's reference link. It is only used when it is one of *their*
+    // addresses on *this* console, so a link to Lemon Amiga or MobyGames is
+    // ignored rather than fetched.
+    $pinned = (string) ($params['external_url'] ?? '');
+    if ($pinned !== '' && str_contains($pinned, '/game/' . $console . '/')) {
+        [$page, $pinErr] = metadata_http_get($pinned, ['Accept: text/html'], $timeout);
+        if ($pinErr === null && pricecharting_self_url((string) $page, $console) !== null) {
+            return pricecharting_candidate((string) $page, $title, $remotePlatform, $pinned);
+        }
+    }
+
     // The entry's release year, when there is an entry behind this.
     //
     // Read before the search rather than only before the fallback: it is what
@@ -3762,8 +3799,10 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         // platform and nothing else - the contract every source shares. Passing
         // the entry through would change all fourteen of them for the benefit of
         // one, so the caller puts it where this source can find it.
+        $tried = [];
         foreach (pricecharting_guess_slugs($title, $year) as $slug) {
             $guess = $base . '/game/' . rawurlencode($console) . '/' . $slug;
+            $tried[] = $console . '/' . $slug;
             [$page, $guessErr] = metadata_http_get($guess, ['Accept: text/html'], $timeout);
             if ($guessErr !== null) {
                 continue;
@@ -3772,7 +3811,15 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
                 return pricecharting_candidate((string) $page, $title, $remotePlatform, $guess);
             }
         }
-        return [[], null];
+
+        // What was asked for, so a miss says which of three things happened.
+        //
+        // "0 results" reads the same whether their search offered nothing on
+        // this console, offered only a different release, or the addresses do
+        // not exist - and only the last means the title is genuinely not in
+        // their catalogue under that name.
+        return [[], null, 'their search offered nothing on ' . $console
+                        . ', and no page at ' . implode(' or ', $tried)];
     }
 
     // The search page may already have been the product page, in which case

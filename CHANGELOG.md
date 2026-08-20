@@ -1,5 +1,59 @@
 # Changelog
 
+**The C64 mapping is right, and that page is a different game.**
+
+`c64` maps to `commodore-64`, which is what their address says. What differs is
+the title: **Attack** of the Mutant Camels is Camels I, and **Revenge** of the
+Mutant Camels is Camels II. Their search offers the first for the second, and it
+scores zero and is refused - correctly. Two games, one family, and a wrong price
+is worse than none.
+
+Loosening the match to catch it would price Camels II at Camels I money, which is
+the fault that had a lookup for Doom priced against Doom III.
+
+## Settling it by hand
+
+Refusing forever is not an answer either, so: **an entry's reference link is used
+when it is one of the source's own addresses on the right console.** Put the
+product page in it and the search is skipped entirely.
+
+Only their addresses, and only on the console the entry is on - a link to Lemon
+Amiga or MobyGames is ignored rather than fetched, because that field holds
+whatever reference somebody found useful.
+
+One decision, recorded once, for the titles no rule can reach.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 194**.
+
+**"0 results" now says why.**
+
+    pricecharting: "Superfrog" gave 0 results (0 images) in 8051ms
+
+That line reads the same whether their search offered nothing on this console,
+offered only a different release, or the addresses simply do not exist - and only
+the last means the title is not in their catalogue under that name. Three
+different situations, one line, nothing to act on.
+
+    pricecharting: "Superfrog" gave 0 results in 8051ms - their search offered
+    nothing on amiga, and no page at amiga/superfrog-1993 or amiga/superfrog
+
+A source may now return a third element explaining a miss. Optional: every other
+source returns two and is unaffected, and the note is only printed when nothing
+was found - what a source walked to reach an answer is noise once it has one.
+
+## Meanwhile, it works
+
+    prices.recorded  PriceCharting: 6 prices for "Jagged Alliance: Deadly Games"
+
+Search, match, parse, record. The path the last dozen builds have been chasing is
+closed.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 193**.
+
 **The same fault, in the other place a platform crosses libraries.**
 
 A source binding can be scoped to a platform - "ask OpenRetro about Amiga games,

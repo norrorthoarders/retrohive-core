@@ -4427,7 +4427,12 @@ function api_metadata_search(): void
     // always surface the right one.
     $year = $item !== null && !empty($item['release_year']) ? (int) $item['release_year'] : null;
 
-    $out = metadata_search_all($title, $platformId, $domain, $categoryId, $kind, $year);
+    // The entry's reference link, for a source that can recognise one of its own
+    // addresses - a title their catalogue names differently can be settled by
+    // hand once rather than never found.
+    $url = $item !== null && !empty($item['external_url']) ? (string) $item['external_url'] : null;
+
+    $out = metadata_search_all($title, $platformId, $domain, $categoryId, $kind, $year, $url);
     api_ok($out['results'], [
         'query'    => $title,
         'domain'   => $domain,
