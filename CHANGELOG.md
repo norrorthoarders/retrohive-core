@@ -1,5 +1,48 @@
 # Changelog
 
+**A lookup for Doom priced Doom III.**
+
+The trace showed it, which is what the trace is for:
+
+    → …/search-products?type=prices&q=Doom
+      product links:
+        …/game/nes/ninja-gaiden-iii-ancient-ship-of-doom
+        …/game/super-nintendo/doom
+        …/game/nintendo-64/doom-64
+    → …/game/pc-games/doom-iii
+
+Two hundred products across every console, and this took the first one whose
+console matched. Their results are not ordered by how well they match, and there
+is no reason they should be.
+
+**A wrong price is worse than none**, because nothing about it looks wrong: six
+figures, a real page, a title one word off.
+
+Candidates are scored now:
+
+    doom                                   100   exactly it
+    doom-1993                               90   the same release, disambiguated
+    doom-iii                                57   a different game
+    doom-3-resurrection-of-evil             38
+    ninja-gaiden-iii-ancient-ship-of-doom   10   contains the word, is not it
+
+A four-digit tail in a plausible range is a **year** - how they disambiguate a
+release that shares a name - and a numeral or a word is a **sequel**. That is a
+rule about this catalogue's subject matter rather than about strings, and it is
+the whole reason `doom-1993` beats `doom-iii`.
+
+**A miss is a miss.** The first version started the best score below zero, so the
+first link always beat it and a search for a title they do not have returned
+whatever came back first - confidently. Caught by testing a title that does not
+exist, which is the case nobody thinks to try.
+
+Language-prefixed links are left alone: `/de/game/…` is the same product in
+German, and taking one would price a shelf off a page nobody asked for.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 181**.
+
 **The lookup tool could not make a request.**
 
     Error: Undefined constant "APP_VERSION"

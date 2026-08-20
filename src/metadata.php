@@ -3664,7 +3664,7 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         return [[], 'PriceCharting: ' . $err];
     }
 
-    $url = pricecharting_first_product_url((string) $found, $console, $base);
+    $url = pricecharting_first_product_url((string) $found, $console, $base, $title);
     if ($url === null) {
         // Their search redirects straight to the product when there is exactly
         // one match, so a page with no result links may already *be* the answer.
@@ -3752,24 +3752,92 @@ function pricecharting_slug(string $title): string
  * the PC release, the Jaguar one, the 32X one and a dozen more, and taking the
  * first would price an Amiga shelf at Jaguar money.
  */
-function pricecharting_first_product_url(string $html, string $console, string $base): ?string
+function pricecharting_first_product_url(string $html, string $console, string $base,
+                                         string $title = ''): ?string
 {
     // Absolute or relative.
     //
-    // The first version matched `href="/game/..."` only, and found nothing: the
-    // page's own canonical link is written in full - `https://www.pricecharting
-    // .com/game/amiga/maniac-mansion` - so a results page writing its links the
-    // same way matched nothing at all. Every search returned zero, on a source
-    // that was reaching the site and being read.
-    // The path up to a query or a fragment, and the closing quote is not
-    // required to follow it: a tracking parameter on the end of a result link
-    // would otherwise make the whole link fail to match, which is a silent zero
-    // rather than an error.
+    // An earlier version matched `href="/game/..."` only, and found nothing:
+    // their pages write links in full, so a results page doing the same matched
+    // nothing at all. The path may carry a query too - a tracking parameter on
+    // the end would otherwise make the link fail to match entirely.
+    //
+    // A leading language segment is deliberately not matched: `/de/game/...` is
+    // the same product in German, and taking one would price a shelf off a page
+    // nobody asked for.
     $pattern = '#href="(?:https?://[^"/]+)?(/game/' . preg_quote($console, '#') . '/[^"?\#]+)#i';
-    if (!preg_match($pattern, $html, $m)) {
+    if (!preg_match_all($pattern, $html, $m)) {
         return null;
     }
-    return $base . $m[1];
+
+    // The best match, not the first one.
+    //
+    // Searching "Doom" returns two hundred products, and the first on the right
+    // console was `doom-iii` - so a lookup for Doom priced Doom III and said
+    // nothing about having done so. Their results are not ordered by how well
+    // they match, and there is no reason they should be.
+    $want = pricecharting_slug($title);
+    $best = null;
+    $bestScore = 0;
+    foreach (array_unique($m[1]) as $path) {
+        $slug  = basename($path);
+        $score = pricecharting_slug_score($want, $slug);
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = $path;
+        }
+    }
+
+    // Nothing scoring above zero is nothing that matches.
+    //
+    // Starting the best at -1 meant the first link always beat it, so a search
+    // for a title they do not have returned whatever came back first - a lookup
+    // for "Nonexistent" priced Doom III, confidently. A miss must be a miss.
+    return $best === null ? null : $base . $best;
+}
+
+/**
+ * How well a product slug answers the title that was searched for.
+ *
+ * Higher is better; anything at zero is a miss.
+ *
+ * The cases that matter, in order:
+ *
+ *   * `doom` for "Doom" - exactly it.
+ *   * `doom-1993` - the same title with a year, which is how they disambiguate a
+ *     release that shares a name. This is the one the whole exercise is about.
+ *   * `doom-3`, `doom-iii`, `doom-64` - a *different* release whose name starts
+ *     the same, and the trap: it looks like a near-match and is a different
+ *     game.
+ *   * `ninja-gaiden-iii-ancient-ship-of-doom` - contains the word and is not it.
+ *
+ * A year is told from a sequel by being four digits in a plausible range. That
+ * is a rule about this catalogue's subject matter rather than about strings, and
+ * it is the reason `doom-1993` beats `doom-3`.
+ */
+function pricecharting_slug_score(string $want, string $slug): int
+{
+    if ($want === '' || $slug === '') {
+        return 0;
+    }
+    if ($slug === $want) {
+        return 100;
+    }
+    if (!str_starts_with($slug, $want . '-')) {
+        // Not the same title at all. Still worth something if the words are
+        // there, so a lone result is used rather than discarded - but below
+        // anything that actually starts with what was asked for.
+        return str_contains($slug, $want) ? 10 : 0;
+    }
+
+    $tail = substr($slug, strlen($want) + 1);
+    if (preg_match('/^(19|20)\d{2}$/', $tail)) {
+        // A year: the same release, disambiguated.
+        return 90;
+    }
+    // A sequel or a variant. Shorter tails first, so `doom-3` is preferred to
+    // `doom-3-resurrection-of-evil` when nothing better exists.
+    return max(20, 60 - strlen($tail));
 }
 
 /**
