@@ -1,5 +1,49 @@
 # Changelog
 
+**A condition report that reported nothing.**
+
+    Overall     Not graded
+    Box         Good
+    Manual      Not graded
+    Media       Not graded
+
+Three of those four rows are a form somebody has not filled in, printed as though
+they were findings.
+
+The web client already drew only the parts that had a label - the intent was
+there and had been for a long time. **Every part had one:** `condition_label()`
+answers "Not graded" for a column nobody filled in, which is right where a grade
+is being asked for and wrong on the way out, so the guard passed on all of them.
+
+Nothing is sent for a part with no grade, in both senses of ungraded - null on a
+row nobody touched, `unknown` where somebody chose it. The value still goes, so a
+client that wants to show the absence can.
+
+**The phones needed no change.** Both already skip a row with no value, and both
+have said so in a comment for months - they were being handed a value that was
+not one.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 214**.
+
+**"Not graded" is not a grade.**
+
+`condition_label()` answers "Not graded" for a null, which is right where a grade
+is being asked for and wrong on the way out: a client testing "is there a label"
+found one on every part, so an entry nobody had graded drew four rows saying
+nothing about the object.
+
+Nothing is sent where there is nothing. Both ways it is stored - null on a row
+nobody touched, `unknown` on one where somebody chose it - and the same for
+completeness, where "Unrecorded" is not a state of the object either.
+
+The value is still sent, so a client that wants to show the absence can.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 214**.
+
 **A recorded valuation can be corrected.**
 
 A market's quote is evidence rather than gospel - a different edition, a

@@ -574,6 +574,25 @@ function api_valuation_shown(?array $v): ?array
     return $v;
 }
 
+/**
+ * A grade in words, or nothing where there is no grade.
+ *
+ * `condition_label()` answers "Not graded" for a null and for `unknown`, which
+ * is right where a grade is being asked for and wrong here: a client testing
+ * "is there a label" then finds one on every part and draws four rows of "Not
+ * graded" that say nothing about the object.
+ *
+ * Both cases, because ungraded is stored either way - null on a row nobody
+ * touched, `unknown` on one where somebody chose it.
+ */
+function graded_label(?string $key): ?string
+{
+    if ($key === null || $key === '' || $key === 'unknown') {
+        return null;
+    }
+    return condition_label($key);
+}
+
 function item_to_api(array $r, bool $withImages = false): array
 {
     // The hardware half, from its own table.
@@ -686,14 +705,30 @@ function item_to_api(array $r, bool $withImages = false): array
 
         'rating'               => $r['rating'] === null ? null : (int) $r['rating'],
         'condition'            => $r['condition_grade'],
-        'condition_label'      => condition_label($r['condition_grade']),
+        // The same for the overall grade: a client that wants to say "not graded"
+        // can, and one that wants to leave the row out now can too.
+        'condition_label'      => graded_label($r['condition_grade']),
         'components'           => [
-            'box'    => ['value' => $r['condition_box'],    'label' => condition_label($r['condition_box'])],
-            'manual' => ['value' => $r['condition_manual'], 'label' => condition_label($r['condition_manual'])],
-            'media'  => ['value' => $r['condition_media'],  'label' => condition_label($r['condition_media'])],
+            // A part nobody graded has no label.
+            //
+            // `condition_label()` answers "Not graded" for a null, which is the
+            // right thing to print where a grade is being asked for - and the
+            // wrong thing to send here, because a client testing "is there a
+            // label" then finds one on every part and draws four rows of "Not
+            // graded" that say nothing.
+            //
+            // The value is still sent, so a client that wants to show the
+            // absence can.
+            'box'    => ['value' => $r['condition_box'],    'label' => graded_label($r['condition_box'])],
+            'manual' => ['value' => $r['condition_manual'], 'label' => graded_label($r['condition_manual'])],
+            'media'  => ['value' => $r['condition_media'],  'label' => graded_label($r['condition_media'])],
         ],
         'completeness'         => $r['completeness'],
-        'completeness_label'   => completeness_label($r['completeness']),
+        // Unrecorded is not a state of the object, so it is sent as nothing -
+        // the same reasoning as the grades above.
+        'completeness_label'   => $r['completeness'] === null || $r['completeness'] === 'unknown'
+            ? null
+            : completeness_label($r['completeness']),
         // Whether there is a box at all, which is the question the box grade
         // assumes an answer to. A client with only the grade cannot tell "no box"
         // from "a box nobody has graded".
