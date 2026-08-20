@@ -1,5 +1,36 @@
 # Changelog
 
+**The engine could not start.**
+
+    Cannot redeclare currency_options()
+
+Build 207 added a currency list to `settings_schema.php`. `models.php` had one
+already - written for the per-entry currency field and never wired to anything -
+and PHP fatals on the redeclaration **before any route is reached**. Every
+request answered 503. The deploy check said "NOT operational" and was right.
+
+Merged into the one that existed, which now also says which currencies this
+instance has a rate for.
+
+## Why nothing caught it
+
+`php -l` parses one file at a time. Each of these was valid; the collision only
+exists once both are in one process, which is a state no check here ever entered.
+
+Every unit is now loaded together, in the order `public/index.php` loads them and
+read from that file - so a unit added there is covered without anybody
+remembering to add it in two places.
+
+Tested by putting the redeclaration back: `php -l` calls the file fine and the
+new check fails.
+
+Three builds of deploy-script fixes were chasing a message that was telling the
+truth all along.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 210**.
+
 **The install now says whether its own configuration can be read.**
 
     Configuration written to .../src/config.local.php

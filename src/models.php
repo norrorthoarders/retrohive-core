@@ -4969,6 +4969,30 @@ function currency_options(): array
     if ($configured !== '' && !isset($common[$configured])) {
         $common = [$configured => $configured] + $common;
     }
+
+    // Which of them this instance can actually convert to.
+    //
+    // Prices come from markets that quote in dollars, so a currency with no rate
+    // is a choice that saves and then quietly shows dollars. Said in the list
+    // rather than discovered afterwards.
+    //
+    // The dollar always converts, being what the sources already quote.
+    $have = [];
+    try {
+        foreach (all('SELECT DISTINCT quote FROM exchange_rates WHERE base = ?', ['USD']) as $row) {
+            $have[(string) $row['quote']] = true;
+        }
+    } catch (Throwable $e) {
+        // Before the table exists - during an install - every choice is simply
+        // unmarked, which is better than refusing to draw the list.
+        return $common;
+    }
+
+    foreach ($common as $code => $label) {
+        if ($code !== 'USD' && !isset($have[$code])) {
+            $common[$code] = $label . ' (no rate yet)';
+        }
+    }
     return $common;
 }
 
