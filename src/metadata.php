@@ -3580,6 +3580,23 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         $url = pricecharting_self_url((string) $found, $console) ?? null;
     }
     if ($url === null) {
+        // Last resort: the address their scheme implies.
+        //
+        // Searching is the right way round - it finds `doom-1993`, which no rule
+        // derives from "Doom" - but it depends on their results markup, which is
+        // not documented and has already been guessed at wrongly once. The
+        // direct address is a guess too, and a different one: for a title they
+        // have not had to disambiguate it is exactly right, and Maniac Mansion
+        // on Amiga is proof.
+        //
+        // Two guesses that fail differently are better than one, and a 404 here
+        // costs a request rather than a wrong answer.
+        $guess = $base . '/game/' . rawurlencode($console) . '/'
+               . pricecharting_slug($title);
+        [$page, $guessErr] = metadata_http_get($guess, ['Accept: text/html'], $timeout);
+        if ($guessErr === null && pricecharting_self_url((string) $page, $console) !== null) {
+            return pricecharting_candidate((string) $page, $title, $remotePlatform, $guess);
+        }
         return [[], null];
     }
 
@@ -3594,7 +3611,19 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         }
     }
 
-    $read = pricecharting_observations_from_html((string) $body);
+    return pricecharting_candidate((string) $body, $title, $remotePlatform, $url);
+}
+
+/**
+ * One product page, as the single candidate this source returns.
+ *
+ * Its own function because two routes reach it - the search, and the direct
+ * address it falls back to - and a candidate assembled twice is two shapes that
+ * drift.
+ */
+function pricecharting_candidate(string $html, string $title, string $platform, string $url): array
+{
+    $read = pricecharting_observations_from_html($html);
     if ($read['observations'] === []) {
         return [[], null];
     }
@@ -3602,13 +3631,27 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
     return [[[
         'remote_id' => $read['external_id'],
         'title'     => $title,
-        'platform'  => $remotePlatform,
+        'platform'  => $platform,
         'url'       => $url,
         // What this source is actually for. Kept under its own key so nothing
         // that walks a candidate's fields can mistake a price for a fact about
         // the release.
         'prices'    => $read['observations'],
     ]], null];
+}
+
+/**
+ * A title as their addresses spell it: lowercase, hyphenated, punctuation gone.
+ *
+ * Only good enough for the fallback above. "Maniac Mansion" is `maniac-mansion`
+ * and right; "Doom" is `doom` and wrong, because theirs is `doom-1993`.
+ */
+function pricecharting_slug(string $title): string
+{
+    $s = strtolower(trim($title));
+    $s = str_replace('&', ' and ', $s);
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s) ?? '';
+    return trim($s, '-');
 }
 
 /**
@@ -3620,7 +3663,18 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
  */
 function pricecharting_first_product_url(string $html, string $console, string $base): ?string
 {
-    $pattern = '#href="(/game/' . preg_quote($console, '#') . '/[^"?\#]+)"#i';
+    // Absolute or relative.
+    //
+    // The first version matched `href="/game/..."` only, and found nothing: the
+    // page's own canonical link is written in full - `https://www.pricecharting
+    // .com/game/amiga/maniac-mansion` - so a results page writing its links the
+    // same way matched nothing at all. Every search returned zero, on a source
+    // that was reaching the site and being read.
+    // The path up to a query or a fragment, and the closing quote is not
+    // required to follow it: a tracking parameter on the end of a result link
+    // would otherwise make the whole link fail to match, which is a silent zero
+    // rather than an error.
+    $pattern = '#href="(?:https?://[^"/]+)?(/game/' . preg_quote($console, '#') . '/[^"?\#]+)#i';
     if (!preg_match($pattern, $html, $m)) {
         return null;
     }
@@ -3635,7 +3689,10 @@ function pricecharting_first_product_url(string $html, string $console, string $
  */
 function pricecharting_self_url(string $html, string $console): ?string
 {
-    if (!preg_match('#<link rel="canonical" href="([^"]+)"#i', $html, $m)) {
+    // The attributes appear in either order on different pages, so this asks for
+    // a canonical link rather than for one written a particular way.
+    if (!preg_match('#<link[^>]*rel="canonical"[^>]*href="([^"]+)"#i', $html, $m)
+        && !preg_match('#<link[^>]*href="([^"]+)"[^>]*rel="canonical"#i', $html, $m)) {
         return null;
     }
     return str_contains($m[1], '/game/' . $console . '/') ? $m[1] : null;

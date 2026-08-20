@@ -1,5 +1,38 @@
 # Changelog
 
+**Every PriceCharting search returned zero.**
+
+    pricecharting: "Doom" gave 0 results in 654ms
+    pricecharting: "Maniac Mansion" gave 0 results in 1724ms
+
+No error, a real fetch, a real answer read - and nothing found in it. The link
+matcher asked for `href="/game/{console}/..."` and their pages write links **in
+full**: the product page's own canonical link is
+`https://www.pricecharting.com/game/amiga/maniac-mansion`, so a results page
+doing the same matched nothing at all.
+
+Absolute and relative both now. A query string on the end no longer breaks the
+match either - the pattern required a closing quote straight after the path, so a
+tracking parameter would have produced the same silent zero.
+
+## A second guess that fails differently
+
+When the search finds nothing usable, the direct address is tried:
+`/game/{console}/{slug}`, the title lowercased and hyphenated.
+
+Searching is the right way round - it finds `doom-1993`, which no rule derives
+from "Doom" - but it depends on their results markup, which is undocumented and
+has now been guessed at wrongly once. The direct address is a guess too, and a
+different one: for a title they have not disambiguated it is exactly right, and
+Maniac Mansion on Amiga is the proof.
+
+Two guesses that fail differently are better than one, and a 404 on the second
+costs a request rather than a wrong answer.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 175**.
+
 **An entry's cover carries its full-size URL.**
 
 `cover` had `thumb` and `display` and no way to reach the original, so a client
