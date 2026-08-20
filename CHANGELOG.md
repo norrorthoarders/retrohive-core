@@ -1,5 +1,23 @@
 # Changelog
 
+**The price history was being kept and never read.**
+
+`price_history_for()` was written, called by nothing and tested by nothing - so
+observations accumulated as rows for the sake of a question no page asked. That
+is the whole reason they are rows rather than a column that gets overwritten, and
+it had been true only in the comment.
+
+`GET /items/{id}/prices` answers it: every band with a history, oldest first, and
+which of them matches this copy so a client can lead with it rather than making
+somebody find their own condition in a list of six.
+
+Every band rather than only the matching one - somebody watching a loose price
+climb while their own copy is boxed still wants to see it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 186**.
+
 **`/game/pc-games/doom` is the 2016 reboot.**
 
 An exact slug match scored highest and took it, so a 1993 shelf was priced

@@ -6035,6 +6035,45 @@ function api_metadata_providers_update(int $id): void
  * when an hour is too long to wait: an administrator debugging a mapping wants
  * the next attempt to actually go and ask.
  */
+/**
+ * What an entry has been worth, per band, oldest first.
+ *
+ * The history the observations table has been keeping and nothing has been
+ * reading. A single price answers "what is it worth"; this answers "what has it
+ * been doing", which is the question a collector deciding whether to sell
+ * actually asks - and it is the whole reason observations are rows rather than a
+ * column that gets overwritten.
+ *
+ * Every band, not just the one matching this copy: somebody watching a loose
+ * price climb while their own is boxed still wants to see it.
+ */
+function api_item_prices(int $id): void
+{
+    // The same shape the images route uses, for the same reason: an entry in a
+    // library this account cannot read is not "forbidden", it is not there.
+    api_require_auth();
+
+    $item = find_item($id);
+    if ($item === null || !can_read_library((int) $item['library_id'])) {
+        api_error('not_found', 'No catalogue entry with that id.', 404);
+    }
+
+    $platformId = $item['platform_id'] === null ? null : (int) $item['platform_id'];
+    $out = [];
+    foreach (price_bands() as $band) {
+        $points = price_history_for((string) $item['title'], $platformId, $band);
+        if ($points !== []) {
+            $out[$band] = $points;
+        }
+    }
+
+    api_ok($out, [
+        // Which of them is this copy's, so a client can lead with it rather than
+        // making somebody find their own condition in a list of six.
+        'band' => price_band_for_completeness($item['completeness'] ?? null),
+    ]);
+}
+
 function api_metadata_providers_forget(int $id): void
 {
     api_require_admin();

@@ -294,6 +294,7 @@ if (str_starts_with($path, '/api/')) {
         ['DELETE', '#^/api/v1/items/(\d+)$#',             fn($id) => api_items_delete((int) $id)],
 
         ['GET',    '#^/api/v1/items/(\d+)/images$#',      fn($id) => api_item_images_index((int) $id)],
+        ['GET',    '#^/api/v1/items/(\d+)/prices$#',      fn($id) => api_item_prices((int) $id)],
         ['POST',   '#^/api/v1/items/(\d+)/images$#',      fn($id) => api_item_images_upload((int) $id)],
         ['PATCH',  '#^/api/v1/images/(\d+)$#',            fn($id) => api_images_update((int) $id)],
         ['DELETE', '#^/api/v1/images/(\d+)$#',            fn($id) => api_images_delete((int) $id)],
