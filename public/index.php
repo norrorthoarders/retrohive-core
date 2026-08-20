@@ -43,7 +43,11 @@ require APP_ROOT . '/src/images.php';
 require APP_ROOT . '/src/models.php';   // which pulls in src/rules.php
 // What a copy is worth, as observed. Separate from metadata.php because it
 // answers a different question - see docs/PRICING.md.
-require APP_ROOT . '/src/prices.php';
+//
+// `require_once`: metadata.php pulls this in itself, because the PriceCharting
+// search calls into it and is loaded first. Named here as well so the list of
+// units stays a list of units.
+require_once APP_ROOT . '/src/prices.php';
 require APP_ROOT . '/src/maintenance.php';
 require APP_ROOT . '/src/settings_schema.php';
 require APP_ROOT . '/src/api.php';

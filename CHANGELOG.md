@@ -1,5 +1,37 @@
 # Changelog
 
+**PriceCharting was skipped on every install, on a source that works.**
+
+    skipped PriceCharting - it did not answer its own probe:
+      PriceCharting files by console; map this platform to one of theirs first.
+
+The message was right and the situation was ours. The install probe runs before
+any provider row exists, so there is nothing for `remote_platform_for()` to map a
+platform id against - and this source cannot search without a console, because
+its URLs are `/game/{console}/{slug}`.
+
+A definition can name a **probe platform** now, used only when the caller has
+none to give. PriceCharting names `amiga`, which with Maniac Mansion is a page
+that exists and has prices on it - which is what a probe needs to prove. A real
+lookup that has mapped a platform keeps its own, and no other source declares
+one.
+
+## A fatal that would have followed
+
+`metadata.php` calls the price parsers, and **both loaders pull metadata.php in
+before prices.php** - so the first lookup during an install would have died on an
+undefined function, one step past the probe that was failing first.
+
+Found by running the search rather than by reading it. metadata.php requires the
+parsers itself now, and both loaders use `require_once` so naming a unit twice is
+not a redeclaration.
+
+MusicBrainz's 503 in the same run is theirs, and reported as such.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 172**.
+
 **PriceCharting is switchable from the answer file, and needs no key.**
 
     "metadata": { "agents": { "pricecharting": { "enable": true } } }

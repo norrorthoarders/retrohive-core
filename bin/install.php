@@ -573,7 +573,10 @@ if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
 foreach (['helpers', 'proxy', 'db', 'auth', 'throttle', 'acl', 'log', 'ldap',
           'metadata', 'version', 'migrate', 'images', 'models', 'prices', 'notify',
           'registration', 'structure'] as $unit) {
-    require APP_ROOT . '/src/' . $unit . '.php';
+    // `require_once`: metadata.php pulls prices.php in itself, because the
+    // PriceCharting search calls into it and metadata is loaded first. The list
+    // still names it, so the set of units stays visible in one place.
+    require_once APP_ROOT . '/src/' . $unit . '.php';
 }
 
 if ($a['install']['deploy'] !== 'keep') {

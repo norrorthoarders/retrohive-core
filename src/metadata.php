@@ -15,6 +15,14 @@ declare(strict_types=1);
  * you actually own.
  */
 
+// The price parsers, which the PriceCharting search calls into.
+//
+// Required here rather than left to the caller: both loaders pull metadata.php
+// in before prices.php, so a lookup during an install fataled on an undefined
+// function - and the install probe is exactly when that happens. `require_once`
+// because the loaders require it again by name afterwards.
+require_once __DIR__ . '/prices.php';
+
 // --- Provider definitions ---------------------------------------------------
 
 /**
@@ -484,6 +492,17 @@ function metadata_provider_types(): array
             'homepage'  => 'https://www.pricecharting.com/api-documentation',
             'filters_by_platform' => true,
             'probe'     => 'Maniac Mansion',
+            // Their console name, for the probe only.
+            //
+            // This source cannot search without one - its URLs are
+            // /game/{console}/{slug} - and the install probe runs before any
+            // provider row exists, so there is nothing to map a platform id
+            // against. Without this it answered every probe with "map this
+            // platform first" and was skipped on every install.
+            //
+            // Amiga and Maniac Mansion together are a page that exists and has
+            // prices on it, which is what a probe needs to prove.
+            'probe_platform' => 'amiga',
             // Off unless somebody says otherwise, even though it needs no key.
             //
             // `needs_key` is what usually makes a source opt-in, and this one is
@@ -1155,6 +1174,24 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
     $type   = (string) $provider['type'];
     $params = metadata_params($provider);
     $remote = $platformId === null ? null : remote_platform_for((int) $provider['id'], $platformId);
+
+    // A source that cannot search without a platform gets the one its definition
+    // names, when the caller had none to give.
+    //
+    // The install probe is the caller that has none: it runs before any provider
+    // row exists, so there is nothing for remote_platform_for() to map against.
+    // PriceCharting files strictly by console - its URLs are /game/{console}/... -
+    // so it answered every probe with "map this platform first" and was skipped
+    // on every install, on a source that works.
+    //
+    // Only as a fallback. A real lookup that has mapped a platform keeps its
+    // own, and a source with no probe platform declared is unaffected.
+    if ($remote === null) {
+        $def = metadata_provider_definition($type);
+        if (isset($def['probe_platform'])) {
+            $remote = (string) $def['probe_platform'];
+        }
+    }
 
     // Every lookup is logged, here, because this is the one place all of them
     // pass through - each source's own search function is reached only from
