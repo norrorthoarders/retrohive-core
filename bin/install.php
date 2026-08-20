@@ -648,7 +648,12 @@ if ($a['install']['metadata_sources']) {
     // and that used to be invisible: the install said "switched on" and every
     // lookup afterwards found nothing.
     foreach ($sources['platforms'] ?? [] as $label => $n) {
-        note(sprintf('  %s: %d platform%s mapped', $label, $n, $n === 1 ? '' : 's'));
+        // `say`, and indented like the skipped lines beside it.
+        //
+        // `note()` wraps its line in blank lines - it is for a standalone
+        // warning, not for a list - so six of these came out double-spaced and
+        // at the same level as the heading they belong under.
+        say(sprintf('  %s: %d platform%s mapped', $label, $n, $n === 1 ? '' : 's'));
     }
 
     // Named here as well as logged. An unattended install will not have anybody
@@ -682,6 +687,25 @@ if ($a['install']['deploy'] !== 'keep') {
             say(sprintf('Shared example library created with %d entries of its own',
                 (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ?', [$sharedId])));
         }
+    }
+
+    // The mappings again, now that the libraries exist.
+    //
+    // Sources are switched on before any library is created, and every library
+    // gets its own copy of the shared platforms - so the first pass mapped the
+    // shared rows and the copies made afterwards had none. A lookup resolves the
+    // same machine by slug regardless, but writing the rows means a mapping
+    // somebody edits later belongs to the platform they are looking at.
+    //
+    // Fills gaps only: metadata_seed_platform_map() never writes over an
+    // existing row.
+    $extra = 0;
+    foreach (all('SELECT id, type FROM metadata_providers') as $p) {
+        $extra += metadata_seed_platform_map((int) $p['id'], (string) $p['type']);
+    }
+    if ($extra > 0) {
+        say(sprintf('  %d further platform mapping%s for the new libraries',
+            $extra, $extra === 1 ? '' : 's'));
     }
 }
 

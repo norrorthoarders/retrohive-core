@@ -1,5 +1,72 @@
 # Changelog
 
+**The same fault, in the other place a platform crosses libraries.**
+
+A source binding can be scoped to a platform - "ask OpenRetro about Amiga games,
+not about DVDs" - and it matched on the row id. Every library has its own copy of
+the shared platforms, so a scope set against the shared Amiga did not apply to an
+entry on a library's own Amiga. Same machine, different row, and the rule quietly
+did not fire.
+
+That is exactly what made every PriceCharting lookup say "not mapped" on a fresh
+install. Found once and then looked for elsewhere rather than waited for.
+
+Matched by slug now, which is what makes two rows the same machine. A different
+machine is still a different machine: a scope on PC does not fire for an Amiga
+entry.
+
+**Categories are not affected**, and it is worth saying why rather than leaving
+it to be re-checked: the ancestry walked there is the entry's own, so it never
+leaves the library it belongs to. Only the platform is compared across that
+boundary.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 192**.
+
+**The platform was mapped. The entry's platform was a different row.**
+
+Every library gets **its own copy** of the shared platforms - same name, same
+slug, its own id. The installer switches sources on before any library exists, so
+the first mapping pass covered the shared rows and every copy made afterwards had
+none.
+
+On a fresh install that is every entry, because the example library is created
+last. The source said 8 platforms mapped, the platform was one of them, and the
+lookup still said "not mapped" - because it was asking about a different row for
+the same machine.
+
+Resolved by slug when the exact row has no mapping of its own. The slug is what
+makes two rows the same machine: a library's copy is made from the shared row and
+carries it, which is the rule `metadata_seed_platform_map()` already uses when it
+writes them. The exact row still wins where there is one, so a mapping somebody
+edited by hand is never talked over.
+
+That fixes an install that has already happened. The installer also maps again
+after the libraries exist, so the rows are there to be edited rather than
+resolved every time.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 191**.
+
+**The mapping report, laid out like the lines beside it.**
+
+    Metadata sources switched on: 13, the ones needing no key that answered
+      PriceCharting: 8 platforms mapped
+      skipped MusicBrainz - it did not answer its own probe: HTTP 503
+
+It used `note()`, which wraps its line in blank lines - that is for a standalone
+warning, not for a list - so six of them came out double-spaced and at the same
+level as the heading they belong under.
+
+The web installer reports them too. It listed what was skipped and not what was
+mapped, which is the half that says whether a source can answer anything.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 190**.
+
 **The installer switched sources on and left them unable to answer.**
 
 Adding a source through the API seeds its platform mappings - what it calls each

@@ -1145,6 +1145,30 @@ function remote_platform_for(int $providerId, int $platformId): ?string
         'SELECT remote_platform_id FROM metadata_provider_platforms WHERE provider_id = ? AND platform_id = ?',
         [$providerId, $platformId]
     );
+    if ($row !== null) {
+        return (string) $row['remote_platform_id'];
+    }
+
+    // The same machine on a different row.
+    //
+    // Every library gets its own copy of the shared platforms, and a copy made
+    // after a source was mapped has no mapping of its own - so an entry on a
+    // library's PC found nothing while the shared PC was mapped all along. On a
+    // fresh install that is *every* entry, because the example library is
+    // created after the sources are switched on.
+    //
+    // Matched by slug, which is what makes two rows the same machine: the copy
+    // is made from the shared row and carries its slug. This is the same rule
+    // metadata_seed_platform_map() already uses when it writes them.
+    $row = one(
+        'SELECT mpp.remote_platform_id
+           FROM metadata_provider_platforms mpp
+           JOIN platforms mapped ON mapped.id = mpp.platform_id
+           JOIN platforms asked  ON asked.slug = mapped.slug
+          WHERE mpp.provider_id = ? AND asked.id = ?
+          LIMIT 1',
+        [$providerId, $platformId]
+    );
     return $row === null ? null : (string) $row['remote_platform_id'];
 }
 

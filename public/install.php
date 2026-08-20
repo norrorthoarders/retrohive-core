@@ -1783,6 +1783,16 @@ if ($running) {
                     // well as in the log. Somebody finishing an install should
                     // not discover months later that a lookup has been quietly
                     // asking four sources instead of six.
+                    // What each source can be asked about.
+                    //
+                    // A source that files by console is useless without a
+                    // mapping, and that used to be invisible: the install said
+                    // "switched on" and every lookup afterwards found nothing.
+                    foreach ($sources['platforms'] ?? [] as $label => $n) {
+                        $log[] = sprintf('%s: %d platform%s mapped',
+                                         $label, $n, $n === 1 ? '' : 's');
+                    }
+
                     foreach ($sources['skipped'] as $label => $why) {
                         $log[] = sprintf('Skipped %s: it did not answer its own probe - %s',
                                          $label, $why);

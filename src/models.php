@@ -1460,11 +1460,26 @@ function providers_for(int $categoryId, ?int $platformId = null): array
     }
 
     $rows = all(
+        // The platform by slug as well as by id.
+        //
+        // Every library has its own copy of the shared platforms - same slug,
+        // its own id - so a scope set against the shared Amiga did not apply to
+        // an entry on a library's Amiga. Same machine, different row, and the
+        // rule silently did not fire.
+        //
+        // This is the fault that made every PriceCharting lookup say "not
+        // mapped" on a fresh install, in the other place a platform id is
+        // matched across that boundary. Categories are safe: the ancestry walked
+        // here is the entry's own, so it never leaves the library.
         'SELECT ps.provider_id, ps.enabled, ps.platform_id, c.depth FROM provider_scopes ps
            JOIN categories c ON c.id = ps.category_id
+      LEFT JOIN platforms scoped ON scoped.id = ps.platform_id
+      LEFT JOIN platforms asked  ON asked.id = ?
           WHERE ps.category_id IN (' . implode(',', array_fill(0, count($ancestry), '?')) . ')
-            AND (ps.platform_id = 0' . ($platformId !== null ? ' OR ps.platform_id = ?' : '') . ')',
-        $platformId !== null ? array_merge($ancestry, [$platformId]) : $ancestry
+            AND (ps.platform_id = 0' . ($platformId !== null ? ' OR scoped.slug = asked.slug' : '') . ')',
+        $platformId !== null
+            ? array_merge([$platformId], $ancestry)
+            : array_merge([null], $ancestry)
     );
 
     // The nearest kind wins, so a row deep in the tree can switch off something
