@@ -1,5 +1,37 @@
 # Changelog
 
+**A PC lookup was searching the Amiga section.**
+
+The command line found Doom-1993 and the web found nothing, from the same code -
+which meant the fault was in the path around the source rather than in the
+source.
+
+`metadata_search()` substitutes a source's own probe console when `$remote` comes
+back null. But **null means two opposite things**: nobody named a machine, or
+somebody named one and it has no mapping. The first is the install probe. The
+second is a real lookup, and putting the probe's console there searched
+`/game/amiga/…` for a PC entry - which found nothing, every time, and logged "0
+results" like any other honest miss.
+
+The command line never reached it: `--platform=pc` resolves to a console before
+the search, so the substitution had nothing to do.
+
+Now it applies only when no platform was asked for at all. A platform that was
+named and is not mapped says so.
+
+## And why the mapping was missing
+
+`metadata_seed_platform_map()` runs when a source is created and when the
+structure is synced. A source added **before** its mapping shipped never got one,
+and nothing said so - the lookup just found nothing.
+
+The sources list reports how many platforms each source has mapped against how
+many it ships, so that state is visible rather than inferred from silence.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 188**.
+
 **Two questions were sharing one cached answer.**
 
     pricecharting: "Doom" answered from cache, 0 results

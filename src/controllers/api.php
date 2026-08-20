@@ -5867,6 +5867,19 @@ function api_metadata_providers_index(): void
             'last_error' => $r['last_error'] ?? null,
             'kinds'      => $def['default_for_kinds'] ?? [],
             'domains'    => $def['domains'] ?? [],
+            // How many of this instance's platforms this source can be asked
+            // about, and how many it ships a mapping for.
+            //
+            // A source that files by console cannot answer without one, and an
+            // unmapped platform is silent: the lookup runs, finds nothing, and
+            // logs "0 results". A source added before its mapping shipped stays
+            // in that state until somebody syncs the structure, and nothing said
+            // so.
+            'platforms_mapped' => (int) scalar(
+                'SELECT COUNT(*) FROM metadata_provider_platforms WHERE provider_id = ?',
+                [(int) $r['id']]
+            ),
+            'platforms_available' => count(metadata_template_platform_map((string) $r['type'])),
         ];
     }, $configured), ['types' => $types]);
 }

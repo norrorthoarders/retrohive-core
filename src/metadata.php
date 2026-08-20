@@ -1250,7 +1250,13 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
     //
     // Only as a fallback. A real lookup that has mapped a platform keeps its
     // own, and a source with no probe platform declared is unaffected.
-    if ($remote === null) {
+    //
+    // Only when no platform was asked for at all. `$platformId === null` is the
+    // probe's situation - nobody named a machine. A platform that *was* named
+    // and has no mapping is the opposite case, and substituting the probe's
+    // console there searched Amiga for a PC entry and found nothing, on every
+    // lookup, silently.
+    if ($remote === null && $platformId === null) {
         $def = metadata_provider_definition($type);
         if (isset($def['probe_platform'])) {
             $remote = (string) $def['probe_platform'];
