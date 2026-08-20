@@ -273,7 +273,24 @@ function ask_everything(array $a): array
     // Only when it matters. As a non-root user the files come out owned by
     // whoever is running this, which is usually already right, and a question
     // about it would be a question with no wrong answer.
-    if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+    // Whether the file can be read by anything other than its owner.
+//
+// The block below only runs when the posix extension is there and the installer
+// is root. Without posix it was skipped in silence - so a root-run install on a
+// server with no posix wrote a root-owned 0640 file, said "Configuration written
+// to ..." and stopped, and the engine then answered every request with a 503
+// nothing had a reason for.
+//
+// Checked separately and always, because "did the ownership step run" and "can
+// the server read this" are different questions and only the second one matters.
+if (!function_exists('posix_geteuid')) {
+    say('WARNING the posix extension is not loaded, so the owner of '
+      . pretty_path(CONFIG_FILE) . ' could not be set. If the web server runs as '
+      . 'another account it will not read the file, and the site will answer 503 - '
+      . 'chown it to the web server by hand');
+}
+
+if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
         fwrite(STDOUT, "\nWeb server\n");
         [$guessUser, $guessGroup] = web_server_account();
         $a['server']['web_user'] = ask('Runs as user', (string) ($a['server']['web_user']
@@ -724,6 +741,31 @@ if ($a['install']['delete_installer']) {
         say('Installer deleted');
     } else {
         say('WARNING could not delete ' . pretty_path($wizard) . ' - remove it by hand');
+    }
+
+    // And whether the configuration this install just wrote can be read at all.
+    //
+    // Every line above can be true and the site still answer 503: the installer
+    // writes the file as whoever ran it, the web server reads it as somebody
+    // else, and nothing between those two facts is checked. The deploy then
+    // reports "NOT operational" with no reason, which is a long way from the
+    // line that would have said it.
+    //
+    // Read back rather than reasoned about - is_readable() answers for the user
+    // running this, and the question is about a different one.
+    $state = config_state();
+    if ($state !== 'present') {
+        say('WARNING the configuration is ' . $state . ' - the site will not start');
+    } else {
+        $owner = function_exists('posix_getpwuid') && function_exists('fileowner')
+            ? (posix_getpwuid((int) fileowner(CONFIG_FILE))['name'] ?? '?')
+            : null;
+        $mode = substr(sprintf('%o', fileperms(CONFIG_FILE)), -4);
+        // 0640 is only safe when the group is the web server's. Said with the
+        // owner beside it, so somebody reading this can tell at a glance whether
+        // the account serving the site is on that list.
+        say(sprintf('Configuration readable: mode %s%s', $mode,
+            $owner === null ? '' : ', owned by ' . $owner));
     }
     note('Done. Delete the answer file.');
 } elseif (is_file(APP_DIR . '/public/install.php')) {

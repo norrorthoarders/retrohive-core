@@ -1,5 +1,30 @@
 # Changelog
 
+**The install now says whether its own configuration can be read.**
+
+    Configuration written to .../src/config.local.php
+    Configuration owned by wwwrun:www
+    ...
+    Configuration readable: mode 0640, owned by wwwrun
+
+Every line of a successful install can be true and the site still answer 503. The
+installer writes the file as whoever ran it; the web server reads it as somebody
+else; nothing between those two facts was checked.
+
+There is a step that fixes this - it chowns the file to the web server - and it
+**only runs when the posix extension is loaded**. Without posix it was skipped in
+silence, which is the same broken outcome with no clue attached. Said out loud
+now, with what will happen if nobody acts on it.
+
+The state is read back at the end rather than assumed, and the owner and mode are
+printed. `is_readable()` would answer for the account running the installer, and
+the question is about a different one - so the answer is the facts, for somebody
+who knows which account serves the site.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 209**.
+
 **"Unconfigured" covered three different problems.**
 
 The status said it for a configuration that is not there, one that is there and
