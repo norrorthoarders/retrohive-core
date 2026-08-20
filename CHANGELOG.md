@@ -1,5 +1,69 @@
 # Changelog
 
+**PriceCharting, declared and not yet built.**
+
+It answers a question none of the other sources do - what a copy is worth rather
+than what it is - and the answer does not fit the shape the others return. Six
+prices per title, by condition: loose, complete, sealed, graded, box only, manual
+only, each with how often one changes hands.
+
+**The bands line up with `completeness`**, which entries already record. That is
+the whole reason this is worth doing properly: a loose disc and a boxed copy of
+Maniac Mansion fetch $99 and $272, and a catalogue storing one number for "Maniac
+Mansion" is answering a question nobody asked.
+
+`price_observations` is the table, migration 016 and in `schema.sql` for a fresh
+install. Its own table rather than columns on `items`, because a price is a fact
+about the market at a moment and not a property of the object - and history is
+kept, because "what has this been worth over time" is what a collector actually
+asks and an overwritten number cannot answer it.
+
+Volume is stored beside every price. A price with no volume is a guess wearing a
+decimal point: "1 sale per year" and "rare" say more about whether a number means
+anything than the number does.
+
+**The fetch is not written**, and the source says so - `metadata_search()` answers
+"No implementation for provider type" and the installer skips it rather than
+probing something that cannot answer. A source announcing itself and doing
+nothing is worse than one that admits it is unfinished.
+
+`docs/PRICING.md` has the reasoning, the three options for where six numbers go
+and why the third is right, and the one question that is not mine: their API is
+sold with a token and the pages are public, and reading pages a site sells access
+to is a licensing decision for whoever runs the instance.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 165**.
+
+**Wikidata timed out on an endpoint that answers a browser at once.**
+
+Every request is preceded by a HEAD, to see where a redirect leads before
+following one. That check sent **no User-Agent**.
+
+Wikimedia's policy is explicit that a client giving none is throttled or refused,
+and the request that would have identified itself properly never happened - the
+preflight was still waiting. The install reported "Operation timed out after
+15002 milliseconds" against a service that was working.
+
+The check now sends the same agent the request does: the version, and the
+instance's own address as a way to reach whoever is running it. That was already
+built and already correct; it was being used in one of the two places that needed
+it.
+
+**The preflight also had the whole timeout.** Both it and the request were given
+fifteen seconds, so a slow endpoint could spend fifteen deciding it does not
+redirect and fifteen more answering. It gets a third now, and at least five - a
+HEAD to a healthy endpoint is fast, and one that needs longer is telling us
+something.
+
+Browsing to the site works because that is the website. The lookup asks
+`query.wikidata.org/sparql`, which is a different service with different manners.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 164**.
+
 **Every keyed source was probed with an empty key.**
 
 An install with all five credentials filled in reported "TheGamesDB: no API key

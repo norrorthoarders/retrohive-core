@@ -1474,6 +1474,16 @@ function installer_enable_metadata_sources(array $settings = [], bool $default =
     }
 
     foreach (metadata_provider_types() as $type => $def) {
+        // Declared but not built yet.
+        //
+        // A source with no implementation answers "No implementation for
+        // provider type" to every probe, which would be reported as a failure on
+        // every install - accurate and useless. Skipped silently until it can do
+        // something.
+        if (!empty($def['unimplemented'])) {
+            continue;
+        }
+
         $keyed = !empty($def['needs_key']);
         $mine  = $settings[(string) $type] ?? [];
         $given = array_filter($mine, static fn($v, $k) => $k !== 'enable' && trim((string) $v) !== '',

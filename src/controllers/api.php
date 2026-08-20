@@ -4474,7 +4474,10 @@ function api_metadata_preview(): void
         [(int) $item['category_id']]
     ) ?: '') === 'hardware';
 
-    $fields = metadata_to_item_fields($candidate);
+    // The copy's own completeness, so a price source offers the figure that fits
+    // it. A loose disc and a complete boxed copy are different money, and the
+    // catalogue already knows which this is.
+    $fields = metadata_to_item_fields($candidate, (string) ($item['completeness'] ?? 'unknown'));
     $hwFields = $isHardware
         ? metadata_to_hardware_fields($candidate, $item !== null ? (int) $item['platform_id'] : null)
         : [];
@@ -4581,7 +4584,7 @@ function api_metadata_apply(): void
     $applyMakes = $isHardware ? 'hardware' : 'software';
 
     $data = [];
-    foreach (metadata_to_item_fields($candidate) as $field => $value) {
+    foreach (metadata_to_item_fields($candidate, (string) ($item['completeness'] ?? 'unknown')) as $field => $value) {
         if (!in_array($field, $wanted, true)) {
             continue;
         }

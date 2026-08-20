@@ -455,6 +455,57 @@ function metadata_provider_types(): array
             // sources that work perfectly.
             'requires' => ['contact'],
         ],
+        'pricecharting' => [
+            'label'     => 'PriceCharting',
+            'blurb'     => 'pricecharting.com. What a release sells for rather than what it is: '
+                          . 'six prices per title - loose, complete, new, graded, box only, manual '
+                          . 'only - and how often one changes hands, which is the number that says '
+                          . 'whether a price means anything at all. Games and machines both, and '
+                          . 'the home computers are covered as well as the consoles. Needs a paid '
+                          . 'API token; there is no free tier.',
+            // Their API is sold with a token, and the pages are public. Reading
+            // pages a site sells access to is a licensing question rather than a
+            // technical one, so this asks for the token and does nothing without
+            // one - which leaves the decision with whoever runs the instance.
+            'needs_key' => true,
+            // Both: they price machines the same way they price games, which is
+            // unusual among these sources and the reason this is worth having on
+            // a hardware shelf too.
+            'domains'   => ['software', 'hardware'],
+            'homepage'  => 'https://www.pricecharting.com/api-documentation',
+            'credentials' => ['api_key' => ['label' => 'API token', 'secret' => true]],
+            'filters_by_platform' => true,
+            'probe'     => 'Maniac Mansion',
+            'params'    => [
+                'endpoint' => 'https://www.pricecharting.com/api',
+                'api_key'  => '',
+                'currency' => 'USD',
+                'timeout'  => 15,
+            ],
+            // Prices, not facts about a release.
+            //
+            // Every other source answers "which release is this" and hands back
+            // a title, a year and a maker. This answers "what is a copy worth",
+            // which is a different question with a different answer shape - so a
+            // lookup offering to overwrite a title with a price would be wrong
+            // in a way no amount of field-matching would catch.
+            //
+            // See docs/PRICING.md for where the six numbers go: an entry already
+            // records its own completeness, which is the join that makes them
+            // useful rather than five of them wasted.
+            'kind'      => 'prices',
+            // Declared, and not yet implemented.
+            //
+            // metadata_search() answers "No implementation for provider type" and
+            // says so in the log, which is what an installer probing this will
+            // report - a source that announces itself and does nothing is worse
+            // than one that is honest about being unfinished.
+            //
+            // The table it will write to exists: price_observations, migration
+            // 016. What is left is the fetch and the mapping from their six
+            // bands to ours, and the licensing question in docs/PRICING.md.
+            'unimplemented' => true,
+        ],
         'igdb' => [
             'label'     => 'IGDB',
             'blurb'     => 'igdb.com. Deep, current and well curated for games, with release dates, studios and platforms. Needs a free Twitch application: the client id and secret are exchanged for a token automatically, so there is no key to paste and nothing to renew by hand.',
@@ -756,7 +807,20 @@ function metadata_url_is_allowed(string $url): ?string
  *
  * Returns [finalUrl, error].
  */
-function metadata_resolve_redirects(string $url, int $max = 3, int $timeout = 15): array
+/**
+ * @param string $agent The User-Agent to identify with, the same one the request
+ *        itself will use.
+ *
+ *        Not optional in practice. This sends a HEAD before every request to
+ *        check where a redirect leads, and it was sending it namelessly - so
+ *        Wikimedia, whose policy is explicit that clients giving no User-Agent
+ *        are throttled or refused, left it hanging until the timeout expired.
+ *        The request that followed never happened, and the install reported
+ *        "Wikidata: Operation timed out" against an endpoint that answers a
+ *        browser immediately.
+ */
+function metadata_resolve_redirects(string $url, int $max = 3, int $timeout = 15,
+                                    string $agent = ''): array
 {
     if (!function_exists('curl_init')) {
         return [$url, null];   // the stream fallback below does its own checking
@@ -771,9 +835,22 @@ function metadata_resolve_redirects(string $url, int $max = 3, int $timeout = 15
             CURLOPT_NOBODY         => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_TIMEOUT        => $timeout,
+            // A third of the budget, not all of it.
+            //
+            // This runs before the request it is checking, and both had the
+            // whole timeout - so a slow endpoint could spend fifteen seconds
+            // deciding it does not redirect and then fifteen more answering,
+            // and a source that was merely slow was reported as timed out
+            // before it had been asked anything.
+            //
+            // At least five seconds, because a HEAD to a healthy endpoint is
+            // fast and one that needs longer than that is telling us something.
+            CURLOPT_TIMEOUT        => max(5, (int) ($timeout / 3)),
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
+        if ($agent !== '') {
+            curl_setopt($ch, CURLOPT_USERAGENT, $agent);
+        }
         curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $next = (string) curl_getinfo($ch, CURLINFO_REDIRECT_URL);
@@ -840,7 +917,7 @@ function metadata_http_get(string $url, array $headers = [], int $timeout = 15, 
     // request and on every hop it is redirected to.
     $maxBytes = 8 * 1024 * 1024;
 
-    [$resolved, $why] = metadata_resolve_redirects($url, 3, $timeout);
+    [$resolved, $why] = metadata_resolve_redirects($url, 3, $timeout, $ua);
     if ($resolved === null) {
         return [null, $why];
     }
