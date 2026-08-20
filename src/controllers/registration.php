@@ -118,9 +118,24 @@ function status_data(): array
     $now = gmdate('Y-m-d\TH:i:s\Z');
 
     if (!app_is_configured()) {
+        // Which of the three, because they need different things done.
+        //
+        // `unconfigured` covered a file that is not there, a file that is there
+        // and cannot be read, and an install that has not been run - and a
+        // deploy check reading it could only say "not operational". A
+        // configuration written by an installer running as one user and read by
+        // a web server running as another is the common one, and it looks
+        // identical to never having installed at all.
+        $state = config_state();
         return [
             'status'     => is_file(installer_path()) ? 'setup' : 'unconfigured',
             'database'   => null,
+            'config'     => $state,
+            'why'        => match ($state) {
+                'unreadable' => 'The configuration exists and cannot be read - check its owner and mode.',
+                'missing'    => 'No configuration, and no DB_HOST in the environment. Run the installer.',
+                default      => null,
+            },
             'checked_at' => $now,
         ];
     }

@@ -1,5 +1,34 @@
 # Changelog
 
+**"Unconfigured" covered three different problems.**
+
+The status said it for a configuration that is not there, one that is there and
+cannot be read, and an install that has never been run. A deploy check reading
+that could only say "not operational".
+
+The middle one is the common case and the least obvious: an installer running as
+one user writes a file a web server running as another cannot read. The install
+reports success, every line of it true, and the engine then says the same word it
+would say if nothing had been installed at all.
+
+    "config": "unreadable",
+    "why": "The configuration exists and cannot be read - check its owner and mode."
+
+## The deploy script ships here now
+
+It runs from the server rather than from a checkout - it deletes and replaces the
+checkout it would be running inside - so it is a copy somebody made once. A fix
+made in the repository never arrived, and the last two builds' corrections to it
+went nowhere.
+
+It lives in `deploy/` so the copy has something to compare itself against, and
+says so when the two differ. Compared rather than overwritten: replacing a
+running script mid-run is how a shell reads half of one file and half of another.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 208**.
+
 **Choosing a currency fetches the rates to convert by.**
 
 Setting SEK and still seeing dollars looks like the setting did not take. It did:
