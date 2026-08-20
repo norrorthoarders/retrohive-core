@@ -1,5 +1,29 @@
 # Changelog
 
+**`--platform` was ignored unless `--all` was also given.**
+
+    ./bin/lookup.php --trace --source=pricecharting --platform=pc Doom
+      PriceCharting files by console; map this platform to one of theirs first.
+
+The flag was read into the options and used by one code path. A single-source run
+passed nothing - so a source that files by console refused a lookup from somebody
+who had just named the console, and both the flag and the source looked broken.
+Neither was.
+
+Resolved on that path now, from the source's own mapping and falling back to the
+shipped one, so it works before a source has been configured at all. A platform
+that maps to nothing says which one and where to set it, rather than failing as
+though none had been given.
+
+**The refusal names what is missing.** "Map this platform first" without saying
+which platform is a sentence somebody reads twice - and after a `--platform=pc`
+that had been silently dropped, it read as the mapping being absent rather than
+the flag never arriving.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 179**.
+
 **A lookup can be watched.**
 
     ./bin/lookup.php --trace --source=pricecharting --platform=pc Doom

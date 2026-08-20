@@ -3635,7 +3635,14 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
     if ($remotePlatform === null || trim($remotePlatform) === '') {
         // Their pages are filed by console and there is no page for a title
         // without one. Said plainly rather than fetched and 404ed.
-        return [[], 'PriceCharting files by console; map this platform to one of theirs first.'];
+        // Said with the platform in it.
+        //
+        // "map this platform first" without naming which one is a sentence
+        // somebody reads twice: on the command line it appeared after a
+        // `--platform=pc` that had been silently ignored, and read as the
+        // mapping being missing rather than the flag not arriving.
+        return [[], 'PriceCharting files by console and this lookup arrived with no platform. '
+                  . 'Pass one, or map this library\'s platform to one of theirs.'];
     }
 
     $base = rtrim((string) ($params['endpoint'] ?? 'https://www.pricecharting.com'), '/');

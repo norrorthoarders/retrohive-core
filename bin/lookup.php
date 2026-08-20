@@ -114,7 +114,24 @@ if ($source === null) {
         : 'No source called "' . $opts['source'] . '". Try --list.');
 }
 
-[$results, $error] = askSource($source, $query);
+// The platform, when one was named.
+//
+// `--platform` was read into the options and used only by `--all`, so a
+// single-source run ignored it - and a source that files by console then said
+// "map this platform first" at somebody who had just named one. The flag looked
+// broken and the source looked misconfigured, and neither was.
+$remote = $opts['platform'] === null
+    ? null
+    : platformIdFor((string) $source['type'], (string) $opts['platform'], $source['row'] ?? null);
+
+if ($opts['platform'] !== null && $remote === null) {
+    fputs(STDERR, sprintf(
+        "  No mapping from \"%s\" to anything %s calls a console.\n"
+        . "  Set one on the source, or check structure/metadata_agents.json.\n",
+        $opts['platform'], $source['type']));
+}
+
+[$results, $error] = askSource($source, $query, $remote);
 
 if ($error !== null && $results === []) {
     fputs(STDERR, "  " . $error . "\n");
@@ -266,6 +283,9 @@ function asSource(string $type, array $def, ?array $row): array
         'label'      => (string) ($def['label'] ?? $type),
         'params'     => $params,
         'configured' => $row !== null,
+        // The row itself, because a platform mapping lives against a configured
+        // source rather than against its type - and resolving one needs the id.
+        'row'        => $row,
     ];
 }
 
