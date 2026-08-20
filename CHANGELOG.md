@@ -1,5 +1,66 @@
 # Changelog
 
+**The prices had nowhere to go.**
+
+The search read six of them and nothing consumed them. Applying a valuation
+candidate was refused - it has no fields, and the guard wanted at least one
+ticked - and no page had anywhere to put one. The whole path existed except its
+two ends.
+
+**Taken as a set, not as six ticks.** "Loose $99" is a fact about a market and
+half a market is not half a fact, so this is one yes and the set is recorded.
+Stored against the title as a dated observation rather than written onto the
+entry: what a copy was worth last year is still there.
+
+**An entry carries what a copy in its state is worth** - matched to its own
+completeness rather than offering six numbers, because a loose disc and a boxed
+copy are worth very different money and the one that matters is the one on the
+shelf. Null when the market does not quote that state; a box with the game and no
+manual has no band, and saying nothing is better than saying the wrong number.
+
+Only on the full shape. It is a query per entry, and a list of two hundred would
+run two hundred of them for a column nobody is reading.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 183**.
+
+**A near match was still being taken.**
+
+The trace showed the same fetch again: `doom-iii`, for a lookup of Doom. Scoring
+had been added and it did not help, because `doom-1993` **is not on that results
+page at all** - "Doom" returns two hundred products and the 1993 release is not
+among the ones on the wanted console.
+
+So `doom-iii` scored 57, was the best available, and won. The score said "a
+different game" and the code took it anyway. That is the fault: a scoring change
+that still accepts the top of a bad field has changed nothing.
+
+**Ninety is the floor now** - an exact slug, or the same title with a year.
+Everything below is a sequel, a variant, or a longer title containing the word,
+and none of those is the thing that was asked about. A shelf with no price is
+correct; a shelf priced off Doom III is not.
+
+## The year is what finds it
+
+With the search declining, the direct address is the second chance - and the bare
+slug is not enough either, because theirs is `doom-1993`.
+
+The entry's own release year is tried after it. A catalogue recording 1993 for
+its copy of Doom knows something their search ranking does not.
+
+It travels in `params` rather than as a fourth argument: an agent is handed a
+title and a platform and nothing else, and that contract is shared by fourteen
+sources. Changing every signature for the benefit of one would be the wrong
+shape.
+
+Two requests at most, and only after the search has failed to find the same
+release. A 404 costs a request; a wrong answer costs a price on a shelf.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 182**.
+
 **A lookup for Doom priced Doom III.**
 
 The trace showed it, which is what the trace is for:

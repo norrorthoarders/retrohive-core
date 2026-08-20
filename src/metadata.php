@@ -1215,7 +1215,17 @@ function metadata_suggest_platform_map(array $remote): array
  *   remote_id, title, year, developer, publisher, platform, url, cover_url,
  *   summary, genre, provider, provider_label
  */
-function metadata_search(array $provider, string $title, ?int $platformId = null): array
+/**
+ * @param ?int $year The entry's release year, when there is an entry.
+ *
+ *        Handed to the source through `params` rather than as a fourth argument:
+ *        an agent is given a title and a platform and nothing else, and that
+ *        contract is shared by fourteen of them. One source can use a year -
+ *        PriceCharting disambiguates several Dooms by it - and changing every
+ *        signature for that would be the wrong shape.
+ */
+function metadata_search(array $provider, string $title, ?int $platformId = null,
+                         ?int $year = null): array
 {
     $title = trim($title);
     if ($title === '') {
@@ -1224,6 +1234,9 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
 
     $type   = (string) $provider['type'];
     $params = metadata_params($provider);
+    if ($year !== null) {
+        $params['release_year'] = $year;
+    }
     $remote = $platformId === null ? null : remote_platform_for((int) $provider['id'], $platformId);
 
     // A source that cannot search without a platform gets the one its definition
@@ -1409,7 +1422,8 @@ function metadata_provider_tested_with(string $type, ?string $platformSlug): boo
  *        a screen that has to explain, for every row, which kind it is.
  */
 function metadata_search_all(string $title, ?int $platformId = null, ?string $domain = null,
-                             ?int $categoryId = null, ?string $kind = null): array
+                             ?int $categoryId = null, ?string $kind = null,
+                             ?int $year = null): array
 {
     $results  = [];
     $errors   = [];
@@ -1516,7 +1530,7 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
             && remote_platform_for((int) $provider['id'], $platformId) === null) {
             $unmapped[] = $provider['name'];
         }
-        $out = metadata_search($provider, $title, $platformId);
+        $out = metadata_search($provider, $title, $platformId, $year);
         if ($out['error'] !== null) {
             $errors[$provider['name']] = $out['error'];
             continue;
@@ -3682,11 +3696,27 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
         //
         // Two guesses that fail differently are better than one, and a 404 here
         // costs a request rather than a wrong answer.
-        $guess = $base . '/game/' . rawurlencode($console) . '/'
-               . pricecharting_slug($title);
-        [$page, $guessErr] = metadata_http_get($guess, ['Accept: text/html'], $timeout);
-        if ($guessErr === null && pricecharting_self_url((string) $page, $console) !== null) {
-            return pricecharting_candidate((string) $page, $title, $remotePlatform, $guess);
+        // The bare slug, and then the same slug with a year.
+        //
+        // `doom-1993` is how they disambiguate a title several releases share,
+        // and the search does not always surface it: "Doom" returns two hundred
+        // products and the 1993 release is not among the ones on the wanted
+        // console.
+        //
+        // The year comes from `params` because an agent is handed a title and a
+        // platform and nothing else - the contract every source shares. Passing
+        // the entry through would change all fourteen of them for the benefit of
+        // one, so the caller puts it where this source can find it.
+        $year = isset($params['release_year']) ? (int) $params['release_year'] : null;
+        foreach (pricecharting_guess_slugs($title, $year) as $slug) {
+            $guess = $base . '/game/' . rawurlencode($console) . '/' . $slug;
+            [$page, $guessErr] = metadata_http_get($guess, ['Accept: text/html'], $timeout);
+            if ($guessErr !== null) {
+                continue;
+            }
+            if (pricecharting_self_url((string) $page, $console) !== null) {
+                return pricecharting_candidate((string) $page, $title, $remotePlatform, $guess);
+            }
         }
         return [[], null];
     }
@@ -3732,10 +3762,32 @@ function pricecharting_candidate(string $html, string $title, string $platform, 
 }
 
 /**
- * A title as their addresses spell it: lowercase, hyphenated, punctuation gone.
+ * The addresses worth trying for a title, in order.
  *
- * Only good enough for the fallback above. "Maniac Mansion" is `maniac-mansion`
- * and right; "Doom" is `doom` and wrong, because theirs is `doom-1993`.
+ * The bare slug first, which is right for anything they have not had to
+ * disambiguate - "Maniac Mansion" is `maniac-mansion`. Then the same slug with
+ * the release year, which is how they tell several Dooms apart.
+ *
+ * Two requests at most, and only when the search has already failed to find the
+ * same release. A 404 costs a request; a wrong answer costs a price on a shelf.
+ *
+ * @return list<string>
+ */
+function pricecharting_guess_slugs(string $title, ?int $year): array
+{
+    $base = pricecharting_slug($title);
+    if ($base === '') {
+        return [];
+    }
+    $out = [$base];
+    if ($year !== null && $year > 1900 && $year < 2100) {
+        $out[] = $base . '-' . $year;
+    }
+    return $out;
+}
+
+/**
+ * A title as their addresses spell it: lowercase, hyphenated, punctuation gone.
  */
 function pricecharting_slug(string $title): string
 {
@@ -3788,12 +3840,17 @@ function pricecharting_first_product_url(string $html, string $console, string $
         }
     }
 
-    // Nothing scoring above zero is nothing that matches.
+    // Only the same release, not a near one.
     //
-    // Starting the best at -1 meant the first link always beat it, so a search
-    // for a title they do not have returned whatever came back first - a lookup
-    // for "Nonexistent" priced Doom III, confidently. A miss must be a miss.
-    return $best === null ? null : $base . $best;
+    // Scoring alone was not enough: `doom-iii` scored 57 and won because
+    // `doom-1993` was not on the page at all, so a lookup for Doom priced Doom
+    // III anyway. The score said "a different game" and the code took it.
+    //
+    // 90 is the floor - an exact slug, or the same title with a year. Everything
+    // below is a sequel, a variant or a longer title that happens to contain the
+    // word, and none of those is the thing that was asked about. A shelf with no
+    // price is correct; a shelf priced off Doom III is not.
+    return $bestScore >= 90 && $best !== null ? $base . $best : null;
 }
 
 /**

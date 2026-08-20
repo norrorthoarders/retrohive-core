@@ -4422,7 +4422,12 @@ function api_metadata_search(): void
         api_error('validation_failed', 'kind must be "details" or "prices".', 422);
     }
 
-    $out = metadata_search_all($title, $platformId, $domain, $categoryId, $kind);
+    // The entry's year, for a source that can use it - PriceCharting tells
+    // several releases of one title apart by it, and their search does not
+    // always surface the right one.
+    $year = $item !== null && !empty($item['release_year']) ? (int) $item['release_year'] : null;
+
+    $out = metadata_search_all($title, $platformId, $domain, $categoryId, $kind, $year);
     api_ok($out['results'], [
         'query'    => $title,
         'domain'   => $domain,
@@ -4591,9 +4596,35 @@ function api_metadata_apply(): void
     $wantedDoc  = is_array($in['documents'] ?? null) ? array_map('strval', $in['documents']) : [];
     $wantedArt  = is_array($in['artwork'] ?? null) ? array_map('strval', $in['artwork']) : [];
 
+    // Prices, which are not fields and are not taken one at a time.
+    //
+    // A valuation candidate carries six of them and they only mean anything
+    // together - "loose $99" is a fact about a market, and half of that market
+    // is not half a fact. So this is a yes to the set rather than a list of
+    // ticks, and it is stored against the title rather than written onto the
+    // entry: see docs/PRICING.md.
+    $wantPrices = !empty($in['prices']) && is_array($candidate['prices'] ?? null);
+
     if ($wanted === [] && $wantedHw === [] && $wantedSpec === [] && $wantedDoc === [] && $wantedArt === []
-        && $wantedCredits === []) {
+        && $wantedCredits === [] && !$wantPrices) {
         api_error('validation_failed', 'Tick at least one field, image, document or hardware detail to import.', 422);
+    }
+
+    $pricesKept = 0;
+    if ($wantPrices) {
+        $pricesKept = record_price_observations(
+            (string) ($candidate['provider'] ?? 'unknown'),
+            (string) ($candidate['title'] ?? $item['title']),
+            $item['platform_id'] === null ? null : (int) $item['platform_id'],
+            $candidate['prices'],
+            isset($candidate['remote_id']) ? (string) $candidate['remote_id'] : null,
+            isset($candidate['url']) ? (string) $candidate['url'] : null
+        );
+        log_event('metadata', 'prices.recorded',
+            sprintf('%s: %d price%s for "%s"',
+                (string) ($candidate['provider_label'] ?? 'a source'), $pricesKept,
+                $pricesKept === 1 ? '' : 's', (string) $item['title']),
+            LOG_INFO, ['item_id' => $itemId, 'prices' => $pricesKept]);
     }
 
     $isHardware = (string) (scalar(
@@ -4706,6 +4737,7 @@ function api_metadata_apply(): void
         'documents_added'  => $docs,
         'spec_rows_added'  => $specsAdded,
         'credits_added'    => $creditsAdded,
+        'prices_recorded'  => $pricesKept,
         'provider_label'   => $candidate['provider_label'] ?? null,
     ]);
 }

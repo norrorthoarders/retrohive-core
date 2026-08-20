@@ -762,6 +762,27 @@ function item_to_api(array $r, bool $withImages = false): array
         // Static, so the query runs once however many rows are being listed -
         // the answer is about the instance, not the entry.
         'can_value'  => metadata_valuation_available(),
+        // What a copy in this state is worth, if anybody has said.
+        //
+        // Matched to the entry's own completeness rather than shown as six
+        // numbers: a loose disc and a boxed copy are worth very different money,
+        // and the one that matters is the one on the shelf.
+        //
+        // Null when there is nothing to say - no observation, or a state the
+        // market does not quote. A page showing "—" is telling the truth; one
+        // showing a loose price against a boxed copy is not.
+        // Only on the full shape, which is what `withImages` marks.
+        //
+        // This is a query per entry, and a list of two hundred would run two
+        // hundred of them for a column nobody is reading. The entry's own page
+        // asks for the full shape; the list does not.
+        'valuation'  => $withImages
+            ? latest_price_for(
+                $r['completeness'] ?? null,
+                (string) $r['title'],
+                $r['platform_id'] === null ? null : (int) $r['platform_id']
+            )
+            : null,
     ];
 
     if ($withImages) {
