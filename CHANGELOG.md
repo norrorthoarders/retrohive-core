@@ -1,5 +1,25 @@
 # Changelog
 
+**Every metadata lookup was a database error.**
+
+    Unknown column 'mapped.platform_id' in 'ORDER BY'
+
+`mapped` is the platforms table, whose key is `id`; the mapping's own column
+lives on `mpp`. The two names read alike, only one of them exists there - and the
+page reported it as "cannot reach its database", which was true of that statement
+and of nothing else.
+
+`php -l` cannot see this, and neither can loading every unit together: a
+statement is only wrong once a database is asked to run it. A check now reads the
+`platforms` table out of `schema.sql` and tests every `mapped.`, `scoped.` and
+`asked.` column against it - the three aliases this engine gives that table.
+
+Verified by putting the wrong column back and watching it named.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 215**.
+
 **A condition report that reported nothing.**
 
     Overall     Not graded

@@ -1160,6 +1160,16 @@ function remote_platform_for(int $providerId, int $platformId): ?string
     // Matched by slug, which is what makes two rows the same machine: the copy
     // is made from the shared row and carries its slug. This is the same rule
     // metadata_seed_platform_map() already uses when it writes them.
+    // `mpp.platform_id` in the ORDER BY, not `mapped.platform_id`.
+    //
+    // `mapped` is the platforms table, whose key is `id`; the mapping's own
+    // column lives on `mpp`. The two names read alike and only one of them
+    // exists here, so every lookup was a 1054 and the page said the database
+    // could not be reached - which was true of that statement and of nothing
+    // else.
+    //
+    // Written here rather than in the SQL: an apostrophe inside a single-quoted
+    // string is how this file stopped parsing a moment ago, for the second time.
     $row = one(
         'SELECT mpp.remote_platform_id
            FROM metadata_provider_platforms mpp
@@ -1180,7 +1190,7 @@ function remote_platform_for(int $providerId, int $platformId): ?string
        -- copy was made from, and falling back to it is falling back to the
        -- default rather than to a stranger.
             AND (mapped.library_id IS NULL OR mapped.library_id = asked.library_id)
-       ORDER BY mapped.library_id = asked.library_id DESC, mapped.platform_id
+       ORDER BY mapped.library_id = asked.library_id DESC, mpp.platform_id
           LIMIT 1',
         [$providerId, $platformId]
     );
