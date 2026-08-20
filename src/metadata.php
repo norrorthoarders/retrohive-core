@@ -3526,20 +3526,25 @@ function igdb_parse_search(string $json): array
  * megabyte and /browse/t/amiga is a fraction of it.
  */
 /**
- * PriceCharting, by URL rather than by search.
+ * PriceCharting, through their own search.
  *
- * Their product pages are addressable - `/game/{console}/{slug}` - and the slug
- * is the title lowercased with punctuation dropped and spaces hyphenated. That
- * is a guess at their scheme rather than a documented rule, so a miss is a 404
- * and reported as one; it is still better than scraping a search page.
+ * The first version built the URL from the title - `/game/{console}/{slug}` with
+ * the title lowercased and hyphenated - which works for Maniac Mansion and fails
+ * for anything they have had to disambiguate. Doom on PC is
+ * `/game/pc-games/doom-1993`, not `/game/pc-games/doom`, and no rule derives that
+ * year from the title alone.
  *
- * A single candidate, or none. This source does not answer "which release is
- * this" - it answers "what is a copy worth" - so offering a list to choose from
- * would be inviting a decision there is nothing to decide.
+ * So this asks them. `/search-products?q=...&type=prices` is the form on their
+ * own page, and the answer is a list of product links - which is a scrape of a
+ * page that exists to be searched rather than a guess at an address.
  *
- * The prices ride on the candidate under `prices`, where api_metadata_apply()
- * can find them. They are not fields on the entry and must never be applied as
- * though they were: see docs/PRICING.md.
+ * A single candidate, or none: this source does not answer "which release is
+ * this" but "what is a copy worth", so a list to choose from would invite a
+ * decision there is nothing to decide. The first result on the right console is
+ * taken.
+ *
+ * The prices ride under `prices`, where nothing walking a candidate's fields can
+ * mistake one for a fact about the release. See docs/PRICING.md.
  */
 function metadata_search_pricecharting(array $params, string $title, ?string $remotePlatform): array
 {
@@ -3556,12 +3561,37 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
     $base = preg_replace('#/api$#', '', $base);
     $timeout = (int) ($params['timeout'] ?? 15);
 
-    $slug = pricecharting_slug($title);
-    $url  = $base . '/game/' . rawurlencode(strtolower(trim($remotePlatform))) . '/' . $slug;
+    $console = strtolower(trim($remotePlatform));
 
-    [$body, $err] = metadata_http_get($url, ['Accept: text/html'], $timeout);
+    // Their search, filtered to the console afterwards.
+    //
+    // The results are links of the form /game/{console}/{slug}, so the console
+    // is in the address and does not need a parameter they may not accept.
+    $searchUrl = $base . '/search-products?type=prices&q=' . rawurlencode($title);
+    [$found, $err] = metadata_http_get($searchUrl, ['Accept: text/html'], $timeout);
     if ($err !== null) {
         return [[], 'PriceCharting: ' . $err];
+    }
+
+    $url = pricecharting_first_product_url((string) $found, $console, $base);
+    if ($url === null) {
+        // Their search redirects straight to the product when there is exactly
+        // one match, so a page with no result links may already *be* the answer.
+        $url = pricecharting_self_url((string) $found, $console) ?? null;
+    }
+    if ($url === null) {
+        return [[], null];
+    }
+
+    // The search page may already have been the product page, in which case
+    // fetching again is a wasted request.
+    if ($url === pricecharting_self_url((string) $found, $console)) {
+        $body = $found;
+    } else {
+        [$body, $err] = metadata_http_get($url, ['Accept: text/html'], $timeout);
+        if ($err !== null) {
+            return [[], 'PriceCharting: ' . $err];
+        }
     }
 
     $read = pricecharting_observations_from_html((string) $body);
@@ -3582,18 +3612,33 @@ function metadata_search_pricecharting(array $params, string $title, ?string $re
 }
 
 /**
- * A title as their URLs spell it.
+ * The first product link on a search page that is on the wanted console.
  *
- * Lowercase, punctuation dropped, spaces hyphenated - which is what their own
- * addresses look like: "Maniac Mansion" is `maniac-mansion`. An ampersand
- * becomes "and" because a bare one would end the query string.
+ * Filtered by console because a title exists on many: searching "Doom" returns
+ * the PC release, the Jaguar one, the 32X one and a dozen more, and taking the
+ * first would price an Amiga shelf at Jaguar money.
  */
-function pricecharting_slug(string $title): string
+function pricecharting_first_product_url(string $html, string $console, string $base): ?string
 {
-    $s = strtolower(trim($title));
-    $s = str_replace('&', ' and ', $s);
-    $s = preg_replace('/[^a-z0-9]+/', '-', $s) ?? '';
-    return trim($s, '-');
+    $pattern = '#href="(/game/' . preg_quote($console, '#') . '/[^"?\#]+)"#i';
+    if (!preg_match($pattern, $html, $m)) {
+        return null;
+    }
+    return $base . $m[1];
+}
+
+/**
+ * Where a page says it is, when their search has redirected to a product.
+ *
+ * One match sends the browser straight there, so the "search results" in hand
+ * are the product page. Its canonical link is how it says so.
+ */
+function pricecharting_self_url(string $html, string $console): ?string
+{
+    if (!preg_match('#<link rel="canonical" href="([^"]+)"#i', $html, $m)) {
+        return null;
+    }
+    return str_contains($m[1], '/game/' . $console . '/') ? $m[1] : null;
 }
 
 function metadata_search_openretro(array $params, string $title, ?string $remotePlatform): array

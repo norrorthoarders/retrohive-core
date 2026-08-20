@@ -729,6 +729,16 @@ function item_to_api(array $r, bool $withImages = false): array
             return [
                 'thumb'      => absolute_url(image_url($filename, 'thumb')),
                 'display'    => absolute_url(image_url($filename, 'display')),
+                // The full-size file, for a client that lets somebody look
+                // properly.
+                //
+                // Only for a real photograph. A stock or category picture is
+                // shipped at display size and has no larger version, so an
+                // `orig` URL for one is a 404 - null says "there is no more of
+                // this" rather than offering a link that breaks.
+                'original'   => $source === 'photo'
+                    ? absolute_url(image_url($filename, 'orig'))
+                    : null,
                 // Kept as it was: true whenever what is shown is not a
                 // photograph of this object. A client that only wants to
                 // know "is this real" needs no change.

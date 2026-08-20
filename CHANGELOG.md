@@ -1,5 +1,75 @@
 # Changelog
 
+**An entry's cover carries its full-size URL.**
+
+`cover` had `thumb` and `display` and no way to reach the original, so a client
+letting somebody look at a photograph properly had to enlarge the display copy -
+a bigger blurry version rather than more of the picture.
+
+`original` is null for a stock or category picture rather than a URL. Those ship
+at display size and have no larger version, so an `orig` address for one is a
+404: saying "there is no more of this" is better than offering a link that
+breaks.
+
+Found while making the web client's cover clickable - the fallback would have
+used `display` every time and looked like it worked.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 174**.
+
+**PriceCharting was listed and could not answer anything.**
+
+Two faults, and each looked like the other.
+
+**No platform map.** `structure/metadata_agents.json` is where a source's console
+names live, and this one was not in it - so every lookup stopped at "map this
+platform to one of theirs first", the same message the install probe gave.
+Fifteen platforms and no mapping for any of them.
+
+**A URL built from the title.** `/game/{console}/{slug}`, with the slug derived
+by lowercasing and hyphenating. That is right for Maniac Mansion and wrong for
+anything they have had to disambiguate: **Doom on PC is
+`/game/pc-games/doom-1993`**, and no rule derives that year from the title.
+
+It asks them now. `/search-products?type=prices&q=...` is the form on their own
+page, and the results are filtered to the wanted console before one is taken -
+searching "Doom" returns the Jaguar release, the 32X one and a dozen more, and
+taking the first would price an Amiga shelf at Jaguar money. A search that
+redirects straight to a product is recognised by its canonical link rather than
+fetched twice.
+
+## Their names, not ours
+
+    pc         -> pc-games
+    c64        -> commodore-64
+    amiga      -> amiga
+    mega-drive -> pal-sega-mega-drive
+
+`pc-games` rather than `pc` is the pair that proves this was read rather than
+assumed: a guess would have 404ed on every PC lookup and looked like a source
+with no PC coverage.
+
+The Sega entries are the **PAL** ones, because a shelf in Europe holds PAL copies
+and the two markets price differently. Somebody with NTSC copies should change
+them rather than have them quietly mean the wrong region.
+
+CDTV and every video and audio platform are **deliberately absent**. They do not
+file those, and a mapping to a console that does not exist is a 404 on every
+lookup rather than an honest "not covered".
+
+## The empty Covers column
+
+`default_for_kinds` was an empty list, which is why the sources page showed a
+dash - the same reason Wikidata shows one. Games, machines and peripherals now:
+they price hardware the same way they price software, which is unusual among
+these sources. Not applications, films or records, because claiming those would
+put this source in front of lookups it can only fail.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 173**.
+
 **PriceCharting was skipped on every install, on a source that works.**
 
     skipped PriceCharting - it did not answer its own probe:
