@@ -753,6 +753,15 @@ function item_to_api(array $r, bool $withImages = false): array
         'updated_at' => api_datetime($r['updated_at']),
         'url'        => base_url() . '/items/' . (int) $r['id'],
         'can_edit'   => can_write_item($r),
+        // Whether anybody can be asked what a copy is worth.
+        //
+        // On the item because that is where the button is, and computed rather
+        // than named: a second price source added later lights the same button
+        // without a client being touched.
+        //
+        // Static, so the query runs once however many rows are being listed -
+        // the answer is about the instance, not the entry.
+        'can_value'  => metadata_valuation_available(),
     ];
 
     if ($withImages) {

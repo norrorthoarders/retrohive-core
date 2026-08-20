@@ -4411,7 +4411,18 @@ function api_metadata_search(): void
                                      WHERE c.id = ?', [$categoryId]) ?: 'software');
     }
 
-    $out = metadata_search_all($title, $platformId, $domain, $categoryId);
+    // Which sort of question this is.
+    //
+    // `details` says what a release is, `prices` says what a copy is worth.
+    // Refused rather than ignored when it is neither: a typo silently becoming
+    // "ask everything" is how somebody ends up with prices in a details list and
+    // no idea why.
+    $kind = $_GET['kind'] ?? null;
+    if ($kind !== null && !in_array($kind, ['details', 'prices'], true)) {
+        api_error('validation_failed', 'kind must be "details" or "prices".', 422);
+    }
+
+    $out = metadata_search_all($title, $platformId, $domain, $categoryId, $kind);
     api_ok($out['results'], [
         'query'    => $title,
         'domain'   => $domain,
@@ -4428,8 +4439,16 @@ function api_metadata_search(): void
         // Zero means nobody was asked, which a client must be able to tell
         // apart from every source having been asked and found nothing.
         'consulted' => $out['consulted'] ?? null,
+        'kind'      => $kind,
         'providers' => array_map(
-            fn($p) => ['id' => (int) $p['id'], 'name' => $p['name'], 'type' => $p['type']],
+            fn($p) => [
+                'id'   => (int) $p['id'],
+                'name' => $p['name'],
+                'type' => $p['type'],
+                // Which question this source answers, so a client can offer the
+                // two lookups separately without a list of names of its own.
+                'kind' => (string) (metadata_provider_definition((string) $p['type'])['kind'] ?? 'details'),
+            ],
             enabled_metadata_providers()
         ),
     ]);
@@ -5971,6 +5990,38 @@ function api_metadata_providers_update(int $id): void
         'probe_ok'    => $probe === true,
         'probe_error' => $probe === true ? null : $probe,
     ]);
+}
+
+/**
+ * Forget what a source has answered.
+ *
+ * A search is cached, and a search that found nothing is cached too - which is
+ * right until somebody is fixing the source, at which point every attempt comes
+ * back "answered from cache, 0 results" and reads as the fix not working.
+ *
+ * The empty answers now expire in an hour rather than a week, so this is for
+ * when an hour is too long to wait: an administrator debugging a mapping wants
+ * the next attempt to actually go and ask.
+ */
+function api_metadata_providers_forget(int $id): void
+{
+    api_require_admin();
+
+    $provider = one('SELECT id, type, name FROM metadata_providers WHERE id = ?', [$id]);
+    if ($provider === null) {
+        api_error('not_found', 'No such metadata source.', 404);
+    }
+
+    // By type rather than by row id: the cache is keyed on what a source *is*,
+    // so two rows of the same type share it - and forgetting one while the
+    // other still answers from the same entries would be half a job.
+    $n = q('DELETE FROM metadata_cache WHERE provider = ?', [(string) $provider['type']])->rowCount();
+
+    log_event('metadata', 'cache.cleared',
+        sprintf('%s: %d cached answer%s forgotten', (string) $provider['name'], $n, $n === 1 ? '' : 's'),
+        LOG_INFO, ['provider_id' => $id]);
+
+    api_ok(['forgotten' => $n]);
 }
 
 function api_metadata_providers_delete(int $id): void

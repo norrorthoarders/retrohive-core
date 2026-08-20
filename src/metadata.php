@@ -678,6 +678,28 @@ function enabled_metadata_providers(): array
     return all('SELECT * FROM metadata_providers WHERE is_enabled = 1 ORDER BY priority, id');
 }
 
+/**
+ * Is there an enabled source that answers what a copy is worth?
+ *
+ * Cached for the request: a list of two hundred entries would otherwise ask this
+ * two hundred times for one answer about the instance.
+ */
+function metadata_valuation_available(): bool
+{
+    static $answer = null;
+    if ($answer !== null) {
+        return $answer;
+    }
+    $answer = false;
+    foreach (enabled_metadata_providers() as $p) {
+        if ((string) (metadata_provider_definition((string) $p['type'])['kind'] ?? 'details') === 'prices') {
+            $answer = true;
+            break;
+        }
+    }
+    return $answer;
+}
+
 /** Is there any source to ask at all? */
 function any_metadata_provider(): bool
 {
@@ -1256,7 +1278,19 @@ function metadata_search(array $provider, string $title, ?int $platformId = null
     }
     unset($r);
 
-    metadata_cache_put($type, $key, $results);
+    // A week for an answer, an hour for nothing.
+    //
+    // A search that found something is a fact about their catalogue and worth
+    // keeping. A search that found nothing is usually about *us* - a parser that
+    // matched the wrong thing, a mapping not set, a source having a bad
+    // afternoon - and cached for a week it makes the fix invisible: the log said
+    // "answered from cache, 0 results" for hours after the parser was corrected,
+    // which reads as the fix not working.
+    //
+    // Still cached, because a title that genuinely is not there should not be
+    // fetched on every keystroke. An hour is long enough for that and short
+    // enough that nobody has to wonder.
+    metadata_cache_put($type, $key, $results, $results === [] ? 1 : 168);
     q('UPDATE metadata_providers SET last_error = NULL, last_used_at = NOW() WHERE id = ?', [(int) $provider['id']]);
 
     // How many pictures came with it, because that is the other thing an admin
@@ -1335,8 +1369,18 @@ function metadata_provider_tested_with(string $type, ?string $platformSlug): boo
  *                              all - which is what was happening: TheRetroWeb was
  *                              switched off for a branch and answered anyway.
  */
+/**
+ * @param ?string $kind Which sort of source to ask: `details` for the ones that
+ *        say what a release is, `prices` for the ones that say what a copy is
+ *        worth, or null for both.
+ *
+ *        The two answer different questions and their answers do not mix. A
+ *        details lookup offers fields to copy onto the entry; a valuation offers
+ *        numbers that are not fields at all, and putting them in one list means
+ *        a screen that has to explain, for every row, which kind it is.
+ */
 function metadata_search_all(string $title, ?int $platformId = null, ?string $domain = null,
-                             ?int $categoryId = null): array
+                             ?int $categoryId = null, ?string $kind = null): array
 {
     $results  = [];
     $errors   = [];
@@ -1359,6 +1403,17 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
 
     foreach ($ask as $provider) {
         $type = (string) $provider['type'];
+
+        // The wrong sort of source for this question.
+        //
+        // A source's `kind` is `prices` or absent, and absent means details -
+        // every source that predates the distinction says what a release is.
+        if ($kind !== null) {
+            $its = (string) (metadata_provider_definition($type)['kind'] ?? 'details');
+            if ($its !== $kind) {
+                continue;
+            }
+        }
 
         // Asking TheGamesDB about an accelerator card was never going to work,
         // and the page of errors it produced read as configuration trouble

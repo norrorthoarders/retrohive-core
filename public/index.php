@@ -335,6 +335,8 @@ if (str_starts_with($path, '/api/')) {
                                                             fn($id) => api_metadata_providers_update((int) $id)],
         ['DELETE', '#^/api/v1/admin/metadata-providers/(\d+)$#',
                                                             fn($id) => api_metadata_providers_delete((int) $id)],
+        ['POST',   '#^/api/v1/admin/metadata-providers/(\d+)/forget$#',
+                                                            fn($id) => api_metadata_providers_forget((int) $id)],
         ['GET',    '#^/api/v1/admin/auth-methods$#',       fn() => api_auth_methods_index()],
         ['POST',   '#^/api/v1/admin/auth-methods$#',       fn() => api_auth_methods_create()],
         ['POST',   '#^/api/v1/admin/auth-methods/test$#',  fn() => api_auth_methods_test()],

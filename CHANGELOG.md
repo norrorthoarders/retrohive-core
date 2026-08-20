@@ -1,5 +1,54 @@
 # Changelog
 
+**A search can ask one sort of source.**
+
+`?kind=details` asks the sources that say what a release is; `?kind=prices` asks
+the ones that say what a copy is worth. Absent asks both, which is what every
+caller did before.
+
+A source's own `kind` decides which list it is in, and a source that does not
+declare one is details - every source that predates the distinction says what a
+release is.
+
+**A bad value is refused, not ignored.** A typo silently becoming "ask
+everything" is how somebody ends up with prices in a details list and no idea
+why.
+
+## The item says whether it can be valued
+
+`can_value` on an entry, true when an enabled source answers that question -
+computed from the sources rather than from a name kept in a client, so a second
+price source added later lights the button without anything else being touched.
+
+Answered once per request rather than per row: the question is about the
+instance, and a list of two hundred entries would otherwise ask it two hundred
+times.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 177**.
+
+**A search that found nothing was cached for a week.**
+
+    pricecharting: "Doom" answered from cache, 0 results
+
+Which is why the last fix looked like it had not worked. A search that finds
+something is a fact about their catalogue and worth keeping for a week; a search
+that finds nothing is usually about *us* - a parser matching the wrong thing, a
+mapping not set - and cached that long it makes every fix invisible.
+
+**An hour for an empty answer**, a week for a real one. Still cached, because a
+title that genuinely is not there should not be fetched on every keystroke.
+
+And a way to not wait the hour: an administrator can clear what a source has
+answered, which is what somebody debugging a mapping actually wants. Cleared by
+source *type* rather than by row, because the cache is keyed on what a source is
+and two rows of one type share it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 176**.
+
 **Every PriceCharting search returned zero.**
 
     pricecharting: "Doom" gave 0 results in 654ms
