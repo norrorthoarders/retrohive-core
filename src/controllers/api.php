@@ -821,7 +821,33 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
     // read the date alone, so typing a price and nothing else left an entry
     // marked owned with a sale on it - which the next rule then wiped, because
     // owned means no sale block. Two fields, one fact.
-    if (!$has('status') && (!empty($data['sold_on']) || !empty($data['sold_price']))) {
+    // "Unless the caller said otherwise" meant "unless a status was sent", and
+    // every save sends one.
+    //
+    // The web form has a Status dropdown and posts it on every save, whether or
+    // not anybody touched it. So filling in Sold on and Sold for, with the
+    // dropdown sitting where it already was, sent `status=owned` beside a sale -
+    // this rule stood down, the next rule read "owned" and wiped the sale, and
+    // the save reported success. Somebody typed a sale, saved, went back in and
+    // found their entry exactly as it had been.
+    //
+    // What the caller *means* is the question. A status that differs from what
+    // the entry already says is a decision; one that matches is the form
+    // repeating itself, and a repetition should not overrule a sale somebody has
+    // just typed in.
+    //
+    // On a new entry there is nothing to have differed from, so an unchanged
+    // status is whatever the form defaulted to - equally not a decision.
+    // On a create there is no previous status, and comparing against nothing
+    // made *every* status look like a decision - including the 'owned' the form
+    // shows by default, which is the case this rule exists for. So on a create
+    // the comparison is against the column's own default instead: 'owned' is the
+    // form talking, and anything else is somebody having chosen it.
+    $wasStatus = $existing === null ? 'owned' : (string) ($existing['status'] ?? '');
+    $statusIsNew = $has('status') && (string) $data['status'] !== $wasStatus;
+
+    if ((!$has('status') || !$statusIsNew)
+        && (!empty($data['sold_on']) || !empty($data['sold_price']))) {
         $data['status'] = 'sold';
     }
 
@@ -829,8 +855,25 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
     // it back on the shelf and the sale goes with it, rather than lingering
     // where only a total will find it.
     if (($data['status'] ?? null) !== null && $data['status'] !== 'sold') {
+        // Every field, not only the ones the caller happened to send.
+        //
+        // This cleared what was in the request, which is enough for the web form
+        // - it posts the whole block every time - and not for anybody else. A
+        // client that says only `{"status": "owned"}` about a sold entry left the
+        // sale in the database: an entry on the shelf with a sale price on it,
+        // and api_stats() sums sold_price with no test on status, so it counted
+        // as money recouped while the thing sat there.
+        //
+        // A status that is not 'sold' is the whole answer. Only when there is
+        // something to clear, so a plain edit of a shelved entry does not write
+        // five nulls over five nulls on every save.
+        $everSold = $existing !== null
+            && ((string) ($existing['status'] ?? '') === 'sold'
+                || ($existing['sold_price'] ?? null) !== null
+                || ($existing['sold_on'] ?? null) !== null);
+
         foreach ($saleKeys as $saleKey) {
-            if ($has($saleKey) || array_key_exists($saleKey, $data)) {
+            if ($has($saleKey) || array_key_exists($saleKey, $data) || $everSold) {
                 $data[$saleKey] = null;
             }
         }

@@ -40,6 +40,26 @@ function price_band_for_completeness(?string $completeness): ?string
         // page that says nothing is better than one that says the wrong number
         // confidently.
         'boxed_no_manual' => null,
+
+        // `unknown` is where most entries live, and it fell through to null.
+        //
+        // The column defaults to it - every entry added by hand or by a lookup
+        // starts there until somebody grades it - so a new game showed no
+        // valuation panel at all, however many prices had been fetched for it.
+        // The prices were recorded and the page could not name a band to ask
+        // for, which reads as the lookup having done nothing.
+        //
+        // `cib` is the honest guess: it is what a market quotes by default, what
+        // a boxed copy on a shelf usually is, and what the collection is mostly
+        // made of. It is a guess, and the page says which band it is showing, so
+        // somebody who grades the copy loose sees the number change to match.
+        //
+        // Not the same as `boxed_no_manual` above: that one *is* graded, and its
+        // grade genuinely has no market equivalent. Saying nothing there is a
+        // fact about the market; saying nothing here was a fact about nobody
+        // having filled a field in yet.
+        'unknown'         => 'cib',
+        'digital'         => null,
         default           => null,
     };
 }

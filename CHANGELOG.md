@@ -1,5 +1,71 @@
 # Changelog
 
+**A sale typed into the form was thrown away on save.**
+
+Fill in Sold on and Sold for, save, come back: the entry exactly as it was, and
+the save reported success.
+
+The rule read *"a sale settles the status unless the caller said otherwise"*, and
+"otherwise" meant "a status was sent". **The web form has a Status dropdown and
+posts it on every save**, whether or not anybody touched it - so a sale arrived
+beside `status=owned`, this rule stood down, the next rule read owned and cleared
+the sale block.
+
+What the caller *means* is the question. A status that differs from what the
+entry already says is a decision; one that matches is the form repeating itself,
+and a repetition must not discard a sale somebody has just typed in. On a create
+there is no previous status, so the comparison is against the column's own
+default: `owned` is the form talking, anything else is a choice.
+
+**And un-selling now clears the whole block, not just the fields the caller
+sent.** A client saying only `{"status": "owned"}` about a sold entry left the
+sale in the database - an entry on the shelf with a sale price on it, which
+`api_stats()` counts as money recouped because it sums `sold_price` with no test
+on status. Only when there is something to clear, so a plain edit does not write
+five nulls over five nulls.
+
+**Three assertions in `tests/box.php` were pinning a mechanism that never
+existed.** They passed `provenance_declared` to mean "the form carried the sale
+block, so a status of owned is a real answer" - and a grep finds that key nowhere
+in either application. It was invented in the test file and never built, so those
+payloads were only ever `status=owned` beside a sale. Rewritten for the behaviour
+that exists, with un-selling asserted in the shape it actually happens: an edit
+against an entry that is already sold.
+
+**And one of my own new assertions could never have passed.** `($u['sold_price']
+?? 'x') === null` cannot tell a key that is present and null - which is precisely
+what a cleared block looks like - from a key that is absent.
+
+This package is **build 241**.
+
+**A new entry could never show a price.**
+
+`items.completeness` defaults to `unknown` - every entry added by hand or by a
+lookup starts there until somebody grades the copy - and
+`price_band_for_completeness()` fell through it to `null`. No band, so no
+valuation on the payload, so no panel on the page, however many prices had been
+fetched.
+
+The prices were recorded correctly the whole time. The page simply could not name
+a band to ask for, which reads as the lookup having done nothing - and it is why
+a freshly added game showed the figure nowhere.
+
+`unknown` is priced as **complete in box**, which is the honest guess: it is what
+a market quotes by default and what a boxed copy on a shelf usually is. The page
+names the band it is showing, so somebody who grades the copy loose sees the
+number change to match.
+
+**Two still say nothing, on purpose.** `boxed_no_manual` is a box with the game
+and no manual, which is not the empty box the market quotes - its real price sits
+between loose and complete and neither is it. And a download has no condition at
+all. Those are facts about the market; `unknown` was a fact about nobody having
+filled in a field yet, which is a different thing and should not have been
+answered the same way.
+
+Pinned in `tests/prices.php`, including that the two exceptions stay exceptions.
+
+This package is **build 240**.
+
 **The engine's root sent people to a sign-in it does not serve.**
 
 Surfing to the instance landed on `/login?next=%2Flogin` and stayed there. Two
