@@ -1,5 +1,86 @@
 # Changelog
 
+**The currency answer never reached the setting that shows it.**
+
+An install told `SEK` wrote it to the configuration file, and `display_currency()`
+falls back to that - so conversion *did* work. What it never touched was the
+Currency setting on the General tab, which has its own default of **USD**. So the
+screen said dollars while the engine used kronor, and the first save on that tab
+wrote the dollars back over the answer.
+
+Two places holding one fact and the installer filling only one of them. Proved
+before fixing: on a fresh database the setting read `NULL` while
+`display_currency()` returned `SEK`.
+
+`installer_apply_settings()` writes both, from both installers, and says which it
+wrote rather than claiming what it skipped.
+
+**And `instance.library_autofill` is an answer now.** Whether a library somebody
+creates starts with the filing structure copied in - the Catalogue tab's setting,
+on by default, examples never part of it - was reachable only by hand after an
+install. The web installer gained a tick box for it beside the examples question,
+where the same distinction is already drawn.
+
+Both survive the JSON export, the INI export and being read back, which is where
+a new answer usually goes missing.
+
+This package is **build 233**.
+
+**The price chart plotted dollars against an axis labelled kronor.**
+
+`/items/{id}/prices` dropped the currency the observation was quoted in, so every
+client took the number for whatever the instance shows. On an instance set to
+kronor a market value of **$109.88** was drawn at *110 SEK* - the right shape at a
+tenth of the scale, with nothing about it looking wrong, on the same screen as a
+headline reading **SEK 1,039.02**. The two numbers were the same price and
+disagreed by a factor of nine.
+
+`price_observations.currency` has been there since valuations were added. The
+column was in the table, the headline converted from it, and the history query
+selected around it.
+
+**Converted in the engine, point by point, at the rate for the day each was
+observed** - which is what `in_display_currency()` takes a date for: a price from
+2019 is worth comparing at 2019's rate rather than at today's. One fix for all
+four clients, rather than the same arithmetic four times.
+
+A point with no rate to convert by is left as it was and marked
+`not_converted` rather than dropped: a gap in a line is a fact about the market,
+and this would be a fact about the rate table.
+
+Checked with a dollar-quoting source against a kronor instance: $109.88 on a
+9.456 rate now reaches the client as 1039.03 SEK, and the older observation
+converts at its own date.
+
+This package is **build 232**.
+
+**An unattended install can now finish on its own.**
+
+`client_url` was the one thing neither installer asked for and neither could be
+told - so every scripted install ended with a hand-finishing step: the account
+made, the database loaded, and `/` answering 503 headed "Not configured" because
+the engine had nowhere to send a browser.
+
+It is `instance.client_url` in the answer file, a field on the web installer's
+settings step beside the public address, and a line in the CLI's summary. Blank
+is a real answer - somebody who has not installed the interface yet should not be
+made to invent an address - and the CLI says plainly what blank costs rather than
+leaving it to be discovered.
+
+Written as a settings row rather than into the configuration file, because
+`to_client()` reads it per request and an administrator can change it later
+without editing anything.
+
+**Round-tripped both ways.** The key survives `--example`, the INI export and
+being read back, which is where a new answer usually goes missing: the parser
+took it, and the normaliser and the INI writer would each have dropped it.
+
+The guidance printed beside the example now covers `install.structure`,
+`install.examples` and both addresses, and `INSTALL.md` documents the
+`[instance]` block, which it never had.
+
+This package is **build 231**.
+
 **A library somebody creates starts with the filing structure again.**
 
 "It starts out empty" was the answer when a client said nothing either way, and

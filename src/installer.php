@@ -726,6 +726,22 @@ function answers_defaults(): array
         'admin'    => ['username' => '', 'password' => '', 'email' => '',
                        'display_name' => ''],
         'instance' => ['name' => 'RetroHive', 'tagline' => '', 'url' => '',
+                       // Where the web interface is, which is a separate
+                       // application on a separate address since the split.
+                       //
+                       // Without it a finished install answers 503 at `/` -
+                       // after the administrator account has been created
+                       // successfully - because the engine has nowhere to send
+                       // a browser. It was the one thing an unattended install
+                       // could not set, so every scripted install needed a hand
+                       // finishing afterwards.
+                       'client_url' => '',
+                       // Whether a library somebody creates starts with the
+                       // filing structure copied in. The Catalogue tab's
+                       // `library_autofill`, answerable here so an unattended
+                       // install can decide it - on by default, and examples are
+                       // never part of it.
+                       'library_autofill' => true,
                        'currency' => 'SEK', 'timezone' => 'Europe/Stockholm',
                        'trusted_proxies' => '', 'debug' => false, 'debug_status' => false],
         // Only the command line installer reads these, and only when it runs as
@@ -795,8 +811,21 @@ function answers_guidance(): array
         '                 erase    drop what is there first - destroys the collection',
         '                 keep     leave the database alone, write the configuration only',
         'install.force_erase  erase alone stops to be confirmed. Set this to mean it.',
-        'install.structure    remote, shipped or none.',
+        'install.structure    remote, shipped or none. Remote fetches machines,',
+        '                     companies and category trees from GitHub - the default.',
+        'install.examples     off by default: reference data is scaffolding, examples',
+        '                     are somebody else\'s collection.',
         'install.metadata_sources  the default for a source metadata.agents does not name.',
+        '',
+        'instance.url         where this engine answers - emails and API responses.',
+        'instance.client_url  where the web interface is, which is a separate',
+        '                     application. Without it / answers 503 once the install',
+        '                     finishes; the API and the phones work regardless.',
+        'instance.currency    what prices are shown in. Written to the configuration',
+        '                     *and* to the Currency setting the General tab edits, which',
+        '                     used to keep its own default of USD.',
+        'instance.library_autofill  whether a library somebody creates starts with the',
+        '                     filing structure copied in. On by default; examples never are.',
         '',
         'metadata.agents.<name>.enable switches a source on. Left out, a free source',
         'follows install.metadata_sources and one needing an account stays off.',
@@ -868,6 +897,8 @@ function answers_export_json(array $v): string
             'name'            => (string) ($v['instance']['name'] ?? 'RetroHive'),
             'tagline'         => (string) ($v['instance']['tagline'] ?? ''),
             'url'             => (string) ($v['instance']['url'] ?? ''),
+            'client_url'      => (string) ($v['instance']['client_url'] ?? ''),
+            'library_autofill' => (bool) ($v['instance']['library_autofill'] ?? true),
             'currency'        => (string) ($v['instance']['currency'] ?? 'SEK'),
             'timezone'        => (string) ($v['instance']['timezone'] ?? 'Europe/Stockholm'),
             'trusted_proxies' => (string) ($v['instance']['trusted_proxies'] ?? ''),
@@ -996,6 +1027,8 @@ function answers_export(array $v): string
     $lines[] = '; The address clients reach this by. Mail and notifications build';
     $lines[] = '; links from it; without it they point nowhere.';
     $lines[] = 'url = ' . $q($v['instance']['url'] ?? '');
+    $lines[] = 'client_url = ' . $q($v['instance']['client_url'] ?? '');
+    $lines[] = 'library_autofill = ' . (!empty($v['instance']['library_autofill']) ? 'true' : 'false');
     $lines[] = 'currency = ' . $q($v['instance']['currency'] ?? 'SEK');
     $lines[] = 'timezone = ' . $q($v['instance']['timezone'] ?? 'Europe/Stockholm');
     $lines[] = '; Behind a reverse proxy, whose forwarded headers to believe.';
@@ -1475,6 +1508,60 @@ function web_server_account(string $wantUser = '', string $wantGroup = ''): arra
  * the one step here whose failure costs nothing that cannot be had later with
  * one press.
  */
+/**
+ * Tell the engine where the web interface is.
+ *
+ * A settings row rather than the config file: `to_client()` reads it at request
+ * time, and an administrator can change it later without editing a file. Blank
+ * leaves it alone - an install that has not been told cannot guess, and writing
+ * an empty string would look like an answer.
+ */
+/**
+ * The instance settings an install decides, as settings rows.
+ *
+ * The configuration file already carries `currency`, and `display_currency()`
+ * falls back to it - so an install set to kronor *did* convert. What it did not
+ * do was tell the Currency setting on the General tab, which has its own default
+ * of USD: the screen said dollars while the engine used kronor, and the first
+ * save on that tab wrote the dollars back over the answer.
+ *
+ * Two places holding one fact, and the installer was only filling one of them.
+ *
+ * Returns what it wrote, so an installer can say so rather than claiming
+ * something it skipped.
+ *
+ * @param array<string, string|bool|null> $wanted
+ * @return list<string>
+ */
+function installer_apply_settings(array $wanted): array
+{
+    if (!function_exists('set_setting')) {
+        return [];
+    }
+    $written = [];
+    foreach ($wanted as $name => $value) {
+        if ($value === null || $value === '') {
+            continue;
+        }
+        if (is_bool($value)) {
+            $value = $value ? '1' : '0';
+        }
+        set_setting($name, (string) $value);
+        $written[] = $name;
+    }
+    return $written;
+}
+
+function installer_set_client_url(string $url): bool
+{
+    $url = rtrim(trim($url), '/');
+    if ($url === '' || !function_exists('set_setting')) {
+        return false;
+    }
+    set_setting('client_url', $url);
+    return true;
+}
+
 function installer_seed_exchange_rates(): array
 {
     if (!function_exists('exchange_rates_refresh')) {

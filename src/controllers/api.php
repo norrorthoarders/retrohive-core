@@ -6287,7 +6287,34 @@ function api_item_prices(int $id): void
     foreach (price_bands() as $band) {
         $points = price_history_for((string) $item['title'], $platformId, $band);
         if ($points !== []) {
-            $out[$band] = $points;
+            // Into the money this instance shows, point by point.
+            //
+            // The headline figure has been converted since valuations were
+            // added; this list was not, so a chart drawn from it plotted dollars
+            // against an axis labelled kronor - the same number an entry's own
+            // panel showed ten times larger, on the same screen.
+            //
+            // At the rate for the day it was observed, which is what
+            // in_display_currency() takes a date for: a price from 2019 is worth
+            // comparing at 2019's rate, not at today's.
+            //
+            // A point that cannot be converted is left as it was and says so,
+            // rather than being dropped - a gap in a line is a fact about the
+            // market, and this would be a fact about the rate table.
+            $out[$band] = array_map(static function (array $point): array {
+                $shown = in_display_currency(
+                    (float) $point['amount'],
+                    (string) ($point['currency'] ?? 'USD'),
+                    $point['observed_on'] ?? null
+                );
+                if ($shown['converted']) {
+                    $point['amount']   = $shown['amount'];
+                    $point['currency'] = $shown['currency'];
+                } else {
+                    $point['not_converted'] = true;
+                }
+                return $point;
+            }, $points);
         }
     }
 

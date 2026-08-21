@@ -192,6 +192,8 @@ function plan(): array
         // step loaded the templates anyway and then copied them into the library.
         // The setting was recorded, read back on the settings page, and never once
         // consulted by the thing it was supposed to control.
+        'client_url' => (string) recall('client_url', ''),
+        'library_autofill' => (string) recall('library_autofill', '1'),
         'structure' => (string) recall('structure', 'remote'),
         'examples'  => (string) recall('examples', '0') === '1',
     ];
@@ -1342,6 +1344,21 @@ if ($step === 4) {
           <span class="hint">Used in emails and API responses.</span>
         </div>
         <div class="field field--half">
+          <label for="client_url">Web interface address</label>
+          <input id="client_url" name="client_url" type="text" value="<?= h($v['client_url'] ?? '') ?>"
+                 placeholder="https://app.example.com">
+          <?php
+          // The screens are a separate application on a separate address, and
+          // this installer never asked for it - so a clean run ended on a 503
+          // headed "Not configured", with the account made and nowhere to go.
+          ?>
+          <span class="hint">
+            Where <em>retrohive-clients-web</em> is served. Leave blank if you have not
+            installed it yet; the API and the phones work without it, and <code>/</code>
+            will say it is not configured until one is set.
+          </span>
+        </div>
+        <div class="field field--half">
           <label for="trusted_proxies">Trusted proxies</label>
           <input id="trusted_proxies" name="trusted_proxies" type="text" value="<?= h($v['trusted_proxies']) ?>"
                  placeholder="172.16.1.1">
@@ -1380,6 +1397,20 @@ if ($step === 4) {
         // asked for - and the only way to decline was to decline the platforms too.
         // Reference data is scaffolding; examples are somebody else's collection.
         ?>
+        <div class="field" style="grid-column:1/-1">
+          <span class="label">New libraries</span>
+          <label class="checkline">
+            <input type="checkbox" name="library_autofill" value="1"
+                   <?= ($v['library_autofill'] ?? '1') === '1' ? 'checked' : '' ?>>
+            Copy the filing structure into libraries people create
+          </label>
+          <span class="hint">
+            Machines, companies and category trees, so somebody who presses <em>new
+            library</em> gets a place to file things rather than a tree to build.
+            Changed later on the Catalogue tab. Examples are never copied.
+          </span>
+        </div>
+
         <div class="field" style="grid-column:1/-1">
           <span class="label">Example entries</span>
           <label class="checkline">
@@ -1775,6 +1806,20 @@ if ($running) {
                     // in dollars cannot convert without one, and nothing used to
                     // fetch it: the table started empty and stayed that way
                     // until somebody found the refresh in the admin pages.
+                    // Where the web interface is. Without it this install
+                    // finishes and then answers 503 at `/`, with the account
+                    // made and nowhere to send a browser.
+                    // The settings the General and Catalogue tabs show, so the
+                    // screens agree with the file this installer just wrote.
+                    installer_apply_settings([
+                        'display_currency' => strtoupper(trim((string) recall('currency', 'SEK'))),
+                        'library_autofill' => (string) recall('library_autofill', '1') === '1',
+                    ]);
+
+                    if (installer_set_client_url((string) recall('client_url', ''))) {
+                        $log[] = 'Web interface at ' . rtrim((string) recall('client_url', ''), '/');
+                    }
+
                     $rates = installer_seed_exchange_rates();
                     $log[] = $rates['written'] > 0
                         ? sprintf('Exchange rates: %d fetched', $rates['written'])

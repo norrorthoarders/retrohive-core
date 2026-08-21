@@ -233,6 +233,7 @@ What it holds:
 | `[admin]` | username, password, email, display name |
 | `[instance]` | name, tagline, public address, currency, timezone, trusted proxies |
 | `[server]` | `web_user`, `web_group` — who the web server runs as |
+| `[instance]` | `name`, `tagline`, `url` (where the engine answers), `client_url` (where the web interface is - without it `/` answers 503 once the install finishes; the API and the phones work regardless), `currency` (shown prices; written to the configuration and to the Currency setting the General tab edits), `library_autofill` (whether a library somebody creates starts with the filing structure copied in - on by default, examples never), `timezone`, `trusted_proxies`, `debug`, `debug_status` |
 | `[install]` | `metadata_sources` (switch on the lookup sources needing no key; on by default, and a tickbox on the wizard's settings step), `deploy` (`install` on an empty database, `erase` to drop what is there first, `keep` to write the configuration only), `erase_uploads`, `force_erase`, `structure` (`remote` to fetch machines, companies and category trees from GitHub - the default - `shipped` for the copies in this checkout, or `none`), `examples` (invented entries and a shared example library; **off** by default, because reference data is scaffolding and examples are somebody else's collection), `delete_installer`, `sign_in` |
 
 ### Running it as root

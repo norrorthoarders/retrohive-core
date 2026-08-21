@@ -584,10 +584,18 @@ function price_history_for(string $title, ?int $platformId, string $band, int $l
     return array_map(
         fn(array $r): array => [
             'amount'      => (float) $r['amount'],
+            // The money it was quoted in.
+            //
+            // The column has always held it and this dropped it, so every reader
+            // took the number for whatever the instance shows. On an instance set
+            // to kronor that drew a market line at "110 SEK" for a price of $110
+            // - the right shape at a tenth of the scale, with nothing about it
+            // looking wrong.
+            'currency'    => (string) ($r['currency'] ?? 'USD'),
             'observed_on' => (string) $r['observed_on'],
         ],
         all(
-            'SELECT amount, observed_on
+            'SELECT amount, currency, observed_on
                FROM price_observations
               WHERE title = ? AND band = ?
                 AND (platform_id = ? OR (platform_id IS NULL AND ? IS NULL))

@@ -624,6 +624,30 @@ if (trim((string) $a['instance']['url']) !== '') {
     set_setting('site_url', rtrim((string) $a['instance']['url'], '/'));
 }
 
+// The settings the General and Catalogue tabs show, so the screens agree with
+// the file. `currency` in the configuration is what display_currency() falls
+// back to; the Currency setting is what the screen edits, and it has its own
+// default of USD - so an install set to kronor showed dollars there and wrote
+// them back over the answer on the first save.
+$applied = installer_apply_settings([
+    'display_currency' => strtoupper(trim((string) $a['instance']['currency'])),
+    'library_autofill' => (bool) ($a['instance']['library_autofill'] ?? true),
+]);
+if ($applied !== []) {
+    say('Settings written: ' . implode(', ', $applied));
+}
+
+// And where the web interface is, which is a different application on a
+// different address. Without it `/` answers 503 once this install finishes -
+// after the account has been made - because the engine has nowhere to send a
+// browser.
+if (installer_set_client_url((string) ($a['instance']['client_url'] ?? ''))) {
+    say('Web interface at ' . rtrim((string) $a['instance']['client_url'], '/'));
+} else {
+    note('No client_url given, so ' . (trim((string) $a['instance']['url']) ?: 'this instance')
+       . ' will answer 503 at / until one is set. The API and the phones work regardless.');
+}
+
 // ---------------------------------------------------------------------------
 // 5. Structure data and the first library
 // ---------------------------------------------------------------------------
