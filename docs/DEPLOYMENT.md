@@ -1,9 +1,15 @@
 # Deploying RetroHive across three machines
 
 The target layout: HAProxy facing clients, Apache on its own VM, MariaDB on
-another. The web UI is served by the same Apache instance as the API, so a
-browser on the internal network and a phone coming through HAProxy hit the same
-code and the same rules.
+another.
+
+**Two applications, not one.** `retrohive-core` is the engine - `/api/v1` and a
+short list of paths that cannot be anything else. `retrohive-clients-web` is the
+browser interface, and it is a client: it holds no database credentials and makes
+no database call, reaching the data over the same HTTP API a phone uses. They can
+share an Apache instance, but they are two document roots and two names, and the
+engine has to be told where the client is or a browser arriving at the engine's
+address gets a 503 saying it has not been configured.
 
 ```
                     internet / clients
@@ -13,8 +19,9 @@ code and the same rules.
                             |
                             |  plain HTTP, internal network
                             v
-   internal browsers -> [ Apache VM ]        RetroHive lives here
-                          10.0.0.20          public/ is the document root
+   internal browsers -> [ Apache VM ]        both applications live here
+                          10.0.0.20          retro.example.com  -> core/public
+                                             app.example.com    -> clients-web/public
                             |
                             |  TCP 3306, internal only
                             v
@@ -22,12 +29,20 @@ code and the same rules.
                           10.0.0.30
 ```
 
-Three things must line up or the install will look subtly broken rather than
+Four things must line up or the install will look subtly broken rather than
 plainly broken:
 
 1. Apache must be told which proxy to believe (`trusted_proxies`)
-2. The app must know its public address (`base_url`)
+2. The engine must know its public address (`base_url`)
 3. MariaDB must accept connections from the Apache VM and nowhere else
+4. The engine must know where the web client is (`client_url`), and the web
+   client must know where the engine is (`CORE_ENGINE_URL`)
+
+The fourth is the one the split added, and it fails in a way worth recognising:
+finishing first-run setup ends by handing the browser to the client, and with
+`client_url` unset that is a 503 headed "Not configured" **after** the
+administrator account has been created successfully. Nothing is wrong with the
+account; the engine simply has nowhere to send them.
 
 ---
 
@@ -166,6 +181,55 @@ return [
 </VirtualHost>
 ```
 
+### The web client's virtual host
+
+A second name and a second document root on the same Apache. It needs no database
+access and no `config.local.php`; it is told where the engine is through the
+environment, the same way the test runner tells it.
+
+```apache
+<VirtualHost *:80>
+    ServerName app.example.com
+    DocumentRoot /opt/retrohive-clients-web/public
+
+    <Directory /opt/retrohive-clients-web/public>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    # Where the engine is. Over the internal network rather than back out
+    # through HAProxy: the client is on the same machine, and a request that
+    # leaves to come straight back is two TLS handshakes for nothing.
+    SetEnv CORE_ENGINE_URL         http://127.0.0.1/api/v1
+    SetEnv CORE_ENGINE_UPLOADS_URL https://retro.example.com/uploads
+
+    RemoteIPHeader X-Forwarded-For
+    RemoteIPTrustedProxy 10.0.0.10
+    CustomLog /var/log/apache2/retrohive-web-access.log proxy
+    ErrorLog  /var/log/apache2/retrohive-web-error.log
+</VirtualHost>
+```
+
+`CORE_ENGINE_UPLOADS_URL` is a public address and `CORE_ENGINE_URL` is not,
+which looks inconsistent and is not: the client *fetches* from the API itself,
+and the browser fetches the photographs. An internal address in an `<img>` is a
+broken image on every device outside the network.
+
+And the engine has to be told the way back:
+
+```sql
+-- or through Settings once an administrator exists
+INSERT INTO settings (`key`, value) VALUES ('client_url', 'https://app.example.com')
+    ON DUPLICATE KEY UPDATE value = VALUES(value);
+```
+
+Without it, `https://retro.example.com/` answers 503 rather than sending a
+browser to the interface - which is the correct refusal and a confusing one if
+nobody has read this far.
+
+### Reaching it internally
+
 Internal browsers can reach `http://10.0.0.20/` directly. Requests arriving that
 way carry no forwarded headers, the proxy logic ignores them, and everything
 still works — the only difference is that session cookies will not be marked
@@ -277,8 +341,9 @@ From the Apache VM, confirm the database:
 mariadb -h 10.0.0.30 -u retrohive -p retrohive -e "SELECT COUNT(*) FROM platforms;"
 ```
 
-From anywhere, confirm the proxy is being believed. Sign in, then look at
-**Manage → Authentication**: the recent sign-in table shows the client IP. If it
+From anywhere, confirm the proxy is being believed. Sign in on the web client,
+then look at **Manage → Authentication**: the recent sign-in table shows the
+client IP. If it
 shows `10.0.0.10`, `trusted_proxies` is not configured and the app is recording
 HAProxy instead of the client.
 
@@ -292,14 +357,29 @@ curl -s https://retro.example.com/api/v1/items?per_page=1 \
 That must come back as `https://retro.example.com/uploads/...`. If it is
 `http://` or an internal hostname, set `base_url`.
 
-Confirm the session cookie:
+Confirm the session cookie — from the **client**, which is where sessions live
+now. The engine has no `/login`; it went with the screens.
 
 ```bash
-curl -sD- -o /dev/null https://retro.example.com/login | grep -i set-cookie
+curl -sD- -o /dev/null https://app.example.com/login | grep -i set-cookie
 ```
 
 It should include `secure`. If it does not, the `X-Forwarded-Proto` header is
 not arriving or `trusted_proxies` does not include the HAProxy address.
+
+Confirm the two halves can see each other:
+
+```bash
+# the engine sends a browser to the client rather than refusing
+curl -sD- -o /dev/null https://retro.example.com/ | grep -i '^location'
+
+# the client can reach the engine: a sign-in page rather than "did not answer"
+curl -s https://app.example.com/login | grep -o '<title>[^<]*'
+```
+
+A 503 from the first is `client_url` unset. An error banner from the second is
+`CORE_ENGINE_URL` wrong, and it will say the server did not answer while the API
+is up and the phones are working.
 
 ---
 
@@ -311,7 +391,10 @@ not arriving or `trusted_proxies` does not include the HAProxy address.
 | `base_url` | Mobile apps show broken images; iOS blocks the requests outright under App Transport Security |
 | `X-Forwarded-Proto` from HAProxy | Same as missing `trusted_proxies` — the app cannot tell the request was HTTPS |
 | MariaDB `bind-address` | Either the app cannot connect, or the database is reachable from the whole network |
-| `fastcgi_param HTTP_AUTHORIZATION` (nginx only) | Web UI works, every API call returns 401 |
+| `fastcgi_param HTTP_AUTHORIZATION` (nginx only) | Every API call returns 401, so the phones fail and so does the web client, which is one |
+| `client_url` on the engine | First-run setup succeeds and then answers 503 "Not configured"; `/` never reaches the interface |
+| `CORE_ENGINE_URL` on the client | Every page reports that the server did not answer, while the API is up and the phones are fine |
+| `CORE_ENGINE_UPLOADS_URL` pointing somewhere internal | Photographs load on the office network and nowhere else |
 
 ---
 

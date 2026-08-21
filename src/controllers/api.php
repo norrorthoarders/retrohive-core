@@ -468,15 +468,9 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         $data[$key] = $grade;
     }
 
-    // The box rule from src/rules.php, not a second copy of it. The form applies
-    // the same one; a client and a person filling in the web form should not be
-    // able to leave the catalogue in two different states from the same answer.
-    if ($has('has_box')) {
-        $box = rule_box_state((bool) $in['has_box'],
-                              $data['condition_box'] ?? ($in['condition_box'] ?? 'unknown'));
-        $data['has_box']       = $box['has_box'];
-        $data['condition_box'] = $box['condition_box'];
-    }
+    // The box rule runs after every grade is in, further down: there are two
+    // blocks that write condition_box in this function, and it has to be the
+    // last word or it is no rule at all. See the comment where it now lives.
 
     // The library owns the entry and decides who may see it. Moved ahead of
     // the developer/publisher block below, which reads $data['library_id']
@@ -726,6 +720,36 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         }
         $data['condition_' . $part] = $value;
     }
+
+    // The box rule from src/rules.php, not a second copy of it. The form applies
+    // the same one; a client and a person filling in the web form should not be
+    // able to leave the catalogue in two different states from the same answer.
+    //
+    // **Here, and not where it used to be.** It ran at the top, right after the
+    // flattened `condition_box` block - and then the component block directly
+    // above this one wrote the grade back from the raw input, because it builds
+    // its key as 'condition_' . $part and reads $in again. So unticking the box
+    // saved has_box = 0 with the old grade still on it: exactly the state this
+    // rule exists to prevent, on the path every client now takes.
+    //
+    // Two consequences of moving it, both wanted. The rule now has the last word
+    // whichever block wrote the grade, and it now sees a grade sent nested as
+    // `components.box` - which bypassed it entirely before, since only the
+    // component block understands that shape.
+    // Run when either half arrives, not only when there is a checkbox.
+    //
+    // rule_box_state() takes null for "the caller has no box control at all -
+    // the software form posts a box grade and no checkbox" and infers from the
+    // grade, because somebody who graded a box has told you there is one. This
+    // only ever called it with a bool, so that branch was unreachable from the
+    // API and a client sending a grade alone left has_box at 0 while grading a
+    // box that the catalogue then said was not there.
+    if ($has('has_box') || $has('condition_box') || isset($components['box'])) {
+        $box = rule_box_state($has('has_box') ? (bool) $in['has_box'] : null,
+                              $data['condition_box'] ?? ($in['condition_box'] ?? 'unknown'));
+        $data['has_box']       = $box['has_box'];
+        $data['condition_box'] = $box['condition_box'];
+    }
     if ($has('copies')) {
         $data['copies'] = max(1, min(255, (int) $in['copies']));
     }
@@ -742,7 +766,12 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         }
     }
     if ($has('currency')) {
-        $data['currency'] = mb_substr((string) $in['currency'], 0, 3);
+        // Upper-cased, the same as sold_currency three blocks up.
+        //
+        // Only the sale's code was, so an entry could be bought in "sek" and
+        // sold in "SEK" - two spellings of one currency, in two columns of one
+        // row, and every comparison between them a string comparison.
+        $data['currency'] = mb_substr(strtoupper(trim((string) $in['currency'])), 0, 3);
     }
     if ($has('is_original')) {
         $data['is_original'] = filter_var($in['is_original'], FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
@@ -765,6 +794,56 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         }
     } elseif (array_key_exists('title', $data) && ($data['title'] === null || $data['title'] === '')) {
         $errors['title'] = 'Title cannot be emptied.';
+    }
+
+    // The sale block follows the status, and the status is the single answer.
+    //
+    // These three rules were in the form that used to save an entry, and were
+    // lost when it became a client. Nothing replaced them, so the engine would
+    // take `status: owned` with a filled-in sale block - two controls for one
+    // fact, contradicting each other.
+    //
+    // Which is not merely untidy: api_stats() totals `SUM(sold_price)` with no
+    // test on status at all, so an entry carrying a stale sale is counted as
+    // money recouped while it sits on the shelf. The dashboard has been reading
+    // the block as fact whatever the status says; this is the writer catching up
+    // with it.
+    //
+    // Late, after the status and the dates are settled, for the same reason the
+    // box rule sits here: a rule that runs before the values it governs is not a
+    // rule.
+    $saleKeys = ['sold_on', 'sold_to', 'sold_price', 'sold_currency', 'sold_note'];
+
+    // A sale date says it sold, unless the caller said otherwise in the same
+    // breath. Somebody filling in when they sold it has told you it is sold, and
+    // making them also change a dropdown is asking twice.
+    if (!$has('status') && !empty($data['sold_on'])) {
+        $data['status'] = 'sold';
+    }
+
+    // And anything else clears the block. This is how an entry is un-sold: put
+    // it back on the shelf and the sale goes with it, rather than lingering
+    // where only a total will find it.
+    if (($data['status'] ?? null) !== null && $data['status'] !== 'sold') {
+        foreach ($saleKeys as $saleKey) {
+            if ($has($saleKey) || array_key_exists($saleKey, $data)) {
+                $data[$saleKey] = null;
+            }
+        }
+    }
+
+    // A sale with no currency named was made in the money the entry was bought
+    // in. Not a default of the instance's own: an entry bought in kronor and
+    // sold without saying is a sale in kronor, and guessing anything else puts a
+    // figure at the wrong scale into a total.
+    if (($data['status'] ?? null) !== 'sold' || !empty($data['sold_price']) || !empty($data['sold_on'])) {
+        $soldCurrency = $data['sold_currency'] ?? null;
+        if ($soldCurrency === null && (!empty($data['sold_price']) || !empty($data['sold_on']))) {
+            $fallback = $data['currency'] ?? ($existing['currency'] ?? null);
+            if ($fallback !== null && $fallback !== '') {
+                $data['sold_currency'] = $fallback;
+            }
+        }
     }
 
     return [$data, $errors];
@@ -945,13 +1024,34 @@ function api_items_update(int $id): void
 function api_items_delete(int $id): void
 {
     api_require_write();
-    $item = one('SELECT id, library_id, created_by FROM items WHERE id = ? AND deleted_at IS NULL', [$id]);
+    // The title comes back too: item_delete_blocker() puts it in the refusal -
+    // "Blizzard 1230 is fitted to Amiga 2000" - and this query selected three
+    // columns because nothing here needed a fourth until the guard was called.
+    $item = one('SELECT id, library_id, created_by, title FROM items WHERE id = ? AND deleted_at IS NULL', [$id]);
     if ($item === null || !can_read_library((int) $item['library_id'])) {
         api_error('not_found', 'No catalogue entry with that id.', 404);
     }
     if (!can_delete_item($item)) {
         api_error('forbidden', 'That library is read-only for your account.', 403);
     }
+    // Nothing fitted to it, and nothing fitted inside it.
+    //
+    // item_delete_blocker() is that rule and it has been in src/models.php,
+    // correct and tested, with **no callers** - the screen that used to ask it
+    // went to the web client and nothing on this side picked the question up. So
+    // deleting an Amiga 2000 left its accelerator pointing at a machine that no
+    // longer exists, through every client at once.
+    //
+    // Before anything is removed. A guard that runs after the pictures have gone
+    // is not a guard.
+    $blocked = item_delete_blocker($id, (string) $item['title']);
+    if ($blocked !== null) {
+        // 409, not 422: nothing about the request is malformed. The catalogue is
+        // in a state where this cannot happen yet, and the message says what to
+        // do about it.
+        api_error('conflict', $blocked, 409);
+    }
+
     $libraryId = (int) $item['library_id'];
     foreach (all('SELECT id FROM item_images WHERE item_id = ?', [$id]) as $img) {
         record_tombstone('item_images', (int) $img['id'], $libraryId);
@@ -2229,6 +2329,11 @@ function api_location_floor($value): ?int
 
 function location_to_api(array $r): array
 {
+    // Once. location_floor() reads the row and then walks its ancestry, and a
+    // tree of two hundred places asked twice per row is two hundred queries
+    // nobody needed.
+    $floor = location_floor((int) $r['id']);
+
     return [
         'id'          => (int) $r['id'],
         'library_id'  => (int) $r['library_id'],
@@ -2248,6 +2353,20 @@ function location_to_api(array $r): array
         'breadcrumb'  => location_breadcrumb((int) $r['id']),
         'depth'       => (int) $r['depth'],
         'floor_level' => $r['floor_level'] === null ? null : (int) $r['floor_level'],
+        // And the one that actually applies, when this place does not say.
+        //
+        // location_floor() has walked the ancestry for this since floors were
+        // added - the item screens use it to print "Floor 1" - and the list left
+        // it out, so a client editing a place could show an empty box and had no
+        // way to say what the blank would mean. A screen that cannot show the
+        // inherited value can only offer a tooltip about inheritance, which is
+        // an explanation standing in for an answer.
+        //
+        // Null when nothing above says either, and `floor_inherited` false when
+        // this place says for itself - so "nobody has decided" and "it is 0
+        // here" stay tellable apart.
+        'floor_effective' => $floor[0],
+        'floor_inherited' => $floor[1],
         'notes'       => $r['notes'],
         'created_at'  => api_datetime($r['created_at'] ?? null),
     ];

@@ -1,5 +1,284 @@
 # Changelog
 
+**The deployment guide would have left somebody with no web interface.**
+
+It described one Apache serving both the API and the web UI, from one document
+root, and said so in the first paragraph. There are two applications now, and
+following that guide gets you the engine and nothing to look at it with.
+
+The failure is worse than a missing page, because it happens *after* something
+that worked: first-run setup creates the administrator account successfully and
+then hands the browser to the client, which with `client_url` unset is a 503
+headed "Not configured". The account is fine. The engine simply has nowhere to
+send them, and nothing on that page says so.
+
+**Added:** the client's own virtual host - a second name, a second document root,
+no database access and no `config.local.php`, told where the engine is through
+`CORE_ENGINE_URL` the same way the test runner tells it. The `client_url` setting
+on the engine, with the SQL to set it before an administrator exists. Both in the
+"what breaks without each setting" table, which is the part somebody reads when
+it has already broken.
+
+**And one asymmetry worth explaining rather than leaving to be discovered.**
+`CORE_ENGINE_URL` is internal and `CORE_ENGINE_UPLOADS_URL` is public. That looks
+like an inconsistency and is not: the client fetches from the API itself, and the
+*browser* fetches the photographs. An internal address in an `<img>` is a broken
+image on every device outside the network.
+
+**Corrected:** the verification steps checked the session cookie at
+`retro.example.com/login`, which the engine no longer serves - `/login` went with
+the screens. They ask the client now, and there are two new checks for the thing
+the split added: that the engine sends a browser onward rather than refusing, and
+that the client can reach the engine at all.
+
+This package is **build 226**.
+
+**The README described an application that no longer exists.**
+
+"One PHP application today, not yet split into a separate headless service —
+`public/index.php` routes to either the JSON API or the HTML pages." It does not.
+The screens are `retrohive-clients-web`, a separate application on a separate
+origin, and what is left here that is not `/api/v1` is four things: first-run
+setup, the paths asked by something that is not a person, the CSV export no
+screen links to, and `/` sending a browser to the client.
+
+The diagram showed this repository's own web pages calling `src/` in the same
+process. Nothing does that any more.
+
+Documentation that describes an architecture two releases old is the same fault
+as a test asserting an old implementation, and harder to notice: nothing fails.
+
+**And the shape is worth stating, because the split's failures were all one
+shape in reverse.** Every rule is on this side, so a client asking whether a
+lookup is worth offering, whether a branch may be deleted, or what floor a place
+is on gets the same answer as every other client - it asks rather than works it
+out. What went wrong was rules left behind: a guard reachable by nobody, a box
+rule written over, a sale block only the dashboard still read. The README says so
+now, where somebody deciding where to put a rule will read it.
+
+This package is **build 225**.
+
+**Checks that existed, were maintained, and could be run by nobody.**
+
+`src/maintenance.php` has carried jobs marked `'scope' => 'library'` since
+maintenance was written - rootless branches, machines with no branch of their
+own, entries shelved in a place another library owns - and
+`api_maintenance_index()` says plainly that it serves the instance ones only,
+"because the library ones belong to a library and are reached through it".
+
+Nothing reached them. There was no endpoint, so a client could not ask, and the
+screen that used to had gone. The checks ran from nowhere.
+
+`GET /libraries/{id}/maintenance` and `POST /libraries/{id}/maintenance/{job}`.
+`maintenance_run_check()` has taken a library id all along, which is how long
+this has been an endpoint away from working.
+
+**Curator, not administrator.** Every one of them changes or reports on what is
+filed in one library, which is what a curator is for - the same bar
+`maintenance_jobs_for()` already applies.
+
+**Also: a lookup offered where nobody would answer.** `can_look_up` on the entry
+says whether `providers_for()` finds a source for the branch it is filed under. A
+branch nobody is asked about must not offer to ask - a rule the entry form used
+to carry as an attribute per category option, lost when the form was rewritten,
+and one the engine is the right place for: every client asking gets the same
+answer.
+
+**And C64 was matched to Commodore 64 in build 223**, which is in this package
+too.
+
+This package is **build 224**.
+
+**C64 is Commodore 64.**
+
+`metadata_suggest_platform_map()` strips the maker word and then requires the two
+names to be equal - so TheGamesDB's "Commodore 64" became "64" while the platform
+here is called "C64", and the commonest home computer of the era matched nothing.
+Somebody mapped it by hand, every time. The same shape catches C128, A500, ST,
+CPC and the BBC Micro.
+
+**Named pairs, not a fuzzy score.** "Close enough" on platform names is how a
+Mega Drive game ends up filed under the Mega-CD. These are spellings somebody has
+decided are the same machine, and anything not on the list still has to match
+outright.
+
+This package is **build 223**.
+
+**A location list that could not say what floor a place is on.**
+
+`location_floor()` walks the ancestry to answer "which floor does this apply on"
+and has done since floors were added - the item screens print it. The list
+endpoint left it out, sending only what each place says for *itself*.
+
+So a client editing a place had an empty box and no way to say what the blank
+meant. The web client's Locations screen carried a tooltip explaining that blank
+inherits, which is an explanation standing in for an answer.
+
+`floor_effective` and `floor_inherited` go with each row now. Two fields rather
+than one, because "nobody above has decided either" and "it is 0 here" are
+different answers and a single number cannot tell them apart.
+
+Resolved once per row: `location_floor()` reads the row and then walks its
+ancestry, and a tree of two hundred places asked twice per row is two hundred
+queries nobody needed.
+
+This package is **build 222**.
+
+**The delete guard needed a column nobody was selecting.**
+
+`api_items_delete()` reads three columns - id, library_id, created_by - because
+nothing there needed a fourth until build 220 called `item_delete_blocker()`,
+which puts the entry's name in its refusal: "Blizzard 1230 is fitted to Amiga
+2000". So the guard worked and PHP warned on every delete.
+
+Caught by `tests/web.sh`, which fails on any warning in the router log for
+exactly this reason: an undefined key is a defect here, not noise.
+
+This package is **build 221**.
+
+**Deleting a machine left its accelerator pointing at nothing.**
+
+`item_delete_blocker()` is the rule that refuses to delete an entry with
+something fitted to it, or something fitted inside it. It has been in
+`src/models.php`, correct and covered by tests that call it directly - with **no
+callers**. The screen that used to ask it went to the web client, and nothing on
+this side picked the question up, so `api_items_delete()` checked that the
+account may write to the library and then removed the row.
+
+Through every client at once, since they all delete the same way.
+
+It is asked now, before anything is removed - a guard that runs after the
+pictures have gone is not a guard - and answers **409**, not 422: nothing about
+the request is malformed. The catalogue is in a state where this cannot happen
+yet, and the message says what to do about it.
+
+This package is **build 220**.
+
+**A sold entry could sit on the shelf, and the dashboard counted the money.**
+
+Three rules left the engine when the entry form became a client and nothing
+replaced them, so `api_item_input()` would take `status: owned` with a filled-in
+sale block - two controls for one fact, contradicting each other.
+
+Not merely untidy. `api_stats()` totals `SUM(sold_price) ... FROM items` with no
+test on status at all, so an entry carrying a stale sale is counted as money
+recouped while it is still on the shelf. The dashboard has been reading the block
+as fact whatever the status said; this is the writer catching up with it.
+
+**Status is the single answer and the block follows it.**
+
+- A sale date settles the status to `sold`, unless the caller said otherwise in
+  the same breath - somebody filling in when they sold it has told you it is
+  sold, and making them change a dropdown as well is asking twice.
+- Any other status clears the block, currency included. That is how an entry is
+  un-sold: put it back on the shelf and the sale goes with it, rather than
+  lingering where only a total will find it.
+- A sale with no currency named was made in the money the entry was bought in.
+  Not the instance's default: an entry bought in kronor and sold without saying
+  is a sale in kronor, and guessing otherwise puts a figure at the wrong scale
+  into a sum.
+
+**At the end of the function, and that is the whole of the bug it nearly
+repeated.** The first version sat where the box rule used to, and the money and
+currency blocks further down wrote over it - the same fault as build 216, in the
+same function, found the same way: by probing it rather than by reading it.
+
+Found by `tests/box.php`, which now passes 34 of 34.
+
+This package is **build 219**.
+
+**Eleven endpoints that existed and were not written down.**
+
+`docs/openapi.yaml` had no entry for exchange rates, the price history and the
+observations behind it, a branch's metadata sources, teaching a source what a
+machine is called, the currency list, or slot types - twenty-one routes across
+eleven paths, all live in `public/index.php`, none documented. A client author
+reading the specification would have concluded the price history did not exist.
+
+They are in now, with the reasoning that is already in the code beside each
+handler rather than a restatement of the URL:
+
+- `/items/{id}/prices` answers "what has it been doing" rather than "what is it
+  worth", which is the question somebody deciding whether to sell actually asks -
+  and every band, because a boxed copy's owner still watches the loose price.
+- `/observations/{id}` corrects the amount and the sales count and **not** the
+  band, title or date: those are what the row *is*, and changing one writes a
+  different observation over this one.
+- `POST /categories/{id}/sources` takes `on`, `off` **or** `inherit`, and the
+  third is the one worth documenting: without it a branch could only ever be
+  given an explicit answer.
+- An entry in a library this account cannot read is **404** on the price routes,
+  not 403 - the same shape the images route uses, and for the same reason.
+- The provider-platform mapping is a POST rather than a PUT, and the router says
+  why: no client here has a PUT, so one verb for one endpoint would be a method
+  added to every client for tidiness rather than for a reason.
+
+`SlotTypeInput` is the one new schema. Everything else references components that
+were already there, and every `$ref` in the file resolves.
+
+Found by `tests/copy.php`, which walks the router and checks each path against
+the specification - so this stays true.
+
+This package is **build 218**.
+
+**Every company copied into a library said it makes games.**
+
+`copy_reference_data()` builds the row list by hand, and `domain` was not in it.
+The column is `ENUM('game','software','both') NOT NULL DEFAULT 'game'`, so the
+copy did not fail, did not warn, and did not leave a gap: it wrote the default.
+Digita International, Gold Disk and NewTek arrived in every library as makers of
+games, and Electronic Arts lost `both` the same way.
+
+Nothing about that looks wrong from the outside. A value is there, it is valid,
+and the only way to know it is the wrong one is to compare it with the row it was
+copied from - which is exactly what `tests/copy.php` does, and has been saying
+for as long as anybody has run it.
+
+`domain` is in the list now. `logo_filename` stays out, deliberately, and the
+comment above it says why: it names a file in `public/uploads`, and pointing
+sixty library rows at one file means removing any of them takes the badge off all
+the others.
+
+This package is **build 217**.
+
+**Unticking the box kept the grade.**
+
+    has_box        0
+    condition_box  very_good
+
+Both written by the same save. `rule_box_state()` exists to stop exactly that -
+grading a box that is not there is meaningless - and it was being called
+correctly, with the right arguments, returning the right answer.
+
+`api_item_input()` writes `condition_box` in **two** places. The flattened block
+near the top, and a second one further down that handles grades arriving nested
+under `components` and builds its key as `'condition_' . $part`. The box rule sat
+between them, so the second block read the raw input again and put the grade
+back. A text search for `condition_box` never showed it, because that block never
+spells the word.
+
+The rule moved below both. It has the last word whichever block wrote the grade -
+and it now sees a grade sent as `components.box`, which bypassed it entirely
+before, since only the second block understands that shape.
+
+**The same rule was unreachable in its other half.** `rule_box_state()` takes
+null for "the caller has no box control at all - the software form posts a grade
+and no checkbox" and infers a box from the grade. The API only ever called it
+with a bool, so a client sending `condition_box` alone left `has_box` at 0 while
+grading a box the catalogue then said was not there. It runs when either half
+arrives now.
+
+**And the purchase currency is upper-cased, like the sale's already was.** Only
+`sold_currency` was, so an entry could be bought in `sek` and sold in `SEK` - two
+spellings of one currency in two columns of one row, and every comparison between
+them a string comparison.
+
+Found by a test suite, not by reading: `tests/box.php` was repointed at
+`api_item_input()` this round, and said so on the first run. Reading the function
+afterwards still did not explain it - the box block looks right where it stood.
+
+This package is **build 216**.
+
 **Every metadata lookup was a database error.**
 
     Unknown column 'mapped.platform_id' in 'ORDER BY'

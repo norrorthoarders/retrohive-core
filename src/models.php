@@ -148,10 +148,17 @@ function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $
     // and pointing sixty library rows at one file means removing any of them takes
     // the badge off all the others.
     if (!empty($parts['makers'])) {
+    // `domain` is in the list. It was not, and the column is
+    // ENUM('game','software','both') NOT NULL DEFAULT 'game' - so every company
+    // copied into a library came out saying it makes games. Digita
+    // International, Electronic Arts and Gold Disk all arrived mislabelled, and
+    // nothing looked wrong: a value was there, it was valid, and it was the
+    // default rather than the answer. Caught by tests/copy.php, which compares
+    // every descriptive column between the template row and the copy.
     q('INSERT INTO companies
-           (library_id, makes, name, slug, country, founded_year, defunct_year,
+           (library_id, makes, domain, name, slug, country, founded_year, defunct_year,
             website, wikipedia_url, notes)
-       SELECT ?, t.makes, t.name, t.slug, t.country, t.founded_year, t.defunct_year,
+       SELECT ?, t.makes, t.domain, t.name, t.slug, t.country, t.founded_year, t.defunct_year,
               t.website, t.wikipedia_url, t.notes
          FROM companies t
     LEFT JOIN companies mine ON mine.library_id = ? AND mine.slug = t.slug

@@ -610,6 +610,94 @@ function api_maintenance_index(): void
 }
 
 /**
+ * The jobs that belong to one library.
+ *
+ * `api_maintenance_index()` serves the instance ones and says why: "the library
+ * ones belong to a library and are reached through it". Nothing reached them.
+ * They have been in src/maintenance.php marked `'scope' => 'library'`, running
+ * from nowhere, since the screens left - so a tree with rootless branches, or a
+ * machine with no branch of its own, was findable by no client at all.
+ *
+ * Curator, not administrator. Every job here changes or reports on what is filed
+ * in one library, which is what a curator is for - and can_curate_library() is
+ * the same bar maintenance_jobs_for() already applies.
+ */
+function api_library_maintenance_index(int $libraryId): void
+{
+    api_require_auth();
+    if (one('SELECT id FROM libraries WHERE id = ?', [$libraryId]) === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_curate_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may curate.', 403);
+    }
+
+    $out = [];
+    foreach (maintenance_jobs() as $key => $job) {
+        if ($job['scope'] !== 'library') {
+            continue;
+        }
+        $result = maintenance_run_check($key, $libraryId);
+        $out[] = [
+            'job'          => $key,
+            'label'        => (string) $job['label'],
+            'blurb'        => (string) $job['blurb'],
+            'count'        => (int) ($result['count'] ?? 0),
+            'message'      => (string) ($result['note'] ?? ''),
+            'rows'         => array_values((array) ($result['rows'] ?? [])),
+            'repairable'   => $job['repair'] !== null,
+            'repair_label' => $job['repair_label'],
+        ];
+    }
+
+    api_ok($out, ['library_id' => $libraryId]);
+}
+
+/**
+ * Run one of them.
+ *
+ * The check runs again afterwards, so the answer says what is left rather than
+ * what was found before - the same shape as the instance repair below.
+ */
+function api_library_maintenance_run(int $libraryId, string $key): void
+{
+    api_require_write();
+    if (one('SELECT id FROM libraries WHERE id = ?', [$libraryId]) === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_curate_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may curate.', 403);
+    }
+
+    $jobs = maintenance_jobs();
+    if (!isset($jobs[$key]) || $jobs[$key]['scope'] !== 'library') {
+        api_error('not_found', 'No library job called "' . $key . '".', 404);
+    }
+    $job = $jobs[$key];
+    if ($job['repair'] === null) {
+        api_error('validation_failed',
+                  '"' . $job['label'] . '" reports and does not repair.', 422);
+    }
+
+    $fn  = $job['repair'];
+    $out = $fn($libraryId);
+
+    log_security('maintenance.run',
+                 sprintf('Ran "%s" on library %d from the API: %s', $job['label'],
+                         $libraryId, (string) ($out['message'] ?? '')),
+                 LOG_NOTICE, ['library' => $libraryId]);
+
+    $after = maintenance_run_check($key, $libraryId);
+    api_ok([
+        'job'     => $key,
+        'label'   => (string) $job['label'],
+        'done'    => (bool) ($out['done'] ?? false),
+        'message' => (string) ($out['message'] ?? ''),
+        'count'   => (int) ($after['count'] ?? 0),
+    ]);
+}
+
+/**
  * Run one repair.
  *
  * A write, and an administrator's: these delete files, rewrite paths and forget

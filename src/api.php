@@ -874,6 +874,20 @@ function item_to_api(array $r, bool $withImages = false): array
         // Static, so the query runs once however many rows are being listed -
         // the answer is about the instance, not the entry.
         'can_value'  => metadata_valuation_available(),
+        // And whether anybody is asked about *this* branch.
+        //
+        // A branch nobody is asked about must not offer to ask - which was the
+        // rule the entry form used to carry as a `data-sources` attribute per
+        // category option, with a script hiding the button. The form no longer
+        // emits it and the offer moved here, where it is drawn for every entry,
+        // so an Amiga demo filed under a branch with no source offers a lookup
+        // that can only come back empty.
+        //
+        // Per entry rather than static, unlike can_value: this one is about the
+        // branch it is filed under, and two entries in one library can differ.
+        'can_look_up' => $r['category_id'] === null
+            ? false
+            : providers_for((int) $r['category_id'], $r['platform_id'] === null ? null : (int) $r['platform_id']) !== [],
         // What a copy in this state is worth, if anybody has said.
         //
         // Matched to the entry's own completeness rather than shown as six

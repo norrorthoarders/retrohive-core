@@ -1231,21 +1231,57 @@ function metadata_suggest_platform_map(array $remote): array
         return trim(preg_replace('/\s+/', ' ', $s) ?? $s);
     };
 
+    // The shorthand a shelf uses and the full name a catalogue prints.
+    //
+    // Stripping the maker leaves TheGamesDB's "Commodore 64" as "64" while the
+    // platform here is called "C64" - so the commonest home computer of the era
+    // matched nothing and somebody mapped it by hand. The same shape catches
+    // C128, A500 and ST.
+    //
+    // Both spellings, normalised the same way, and a match on either counts. Not
+    // a fuzzy score: "close enough" on platform names is how a Mega Drive game
+    // ends up filed under the Mega-CD. These are pairs somebody has decided are
+    // the same machine.
+    $aliases = [
+        'c64'    => ['64', 'commodore 64'],
+        'c128'   => ['128', 'commodore 128'],
+        'vic 20' => ['vic20'],
+        'a500'   => ['amiga 500'],
+        'a1200'  => ['amiga 1200'],
+        'st'     => ['atari st'],
+        'cpc'    => ['amstrad cpc'],
+        'bbc'    => ['bbc micro'],
+        'pcw'    => ['amstrad pcw'],
+    ];
+    $spellings = function (string $normalised) use ($aliases): array {
+        $out = [$normalised];
+        foreach ($aliases as $short => $longs) {
+            $short = trim(preg_replace('/\s+/', ' ', $short) ?? $short);
+            if ($normalised === $short) {
+                $out = array_merge($out, $longs);
+            } elseif (in_array($normalised, $longs, true)) {
+                $out[] = $short;
+            }
+        }
+        return array_unique($out);
+    };
+
     $suggestions = [];
     foreach (all_platforms() as $local) {
         $localName = $normalise((string) $local['name']);
         if ($localName === '') {
             continue;
         }
+        $localSpellings = $spellings($localName);
         $best = null;
         foreach ($remote as $id => $name) {
             $remoteName = $normalise((string) $name);
             if ($remoteName === '') {
                 continue;
             }
-            if ($remoteName === $localName) {
+            if (array_intersect($localSpellings, $spellings($remoteName)) !== []) {
                 $best = (string) $id;
-                break;                       // exact wins outright
+                break;                       // a named pairing wins outright
             }
         }
         if ($best !== null) {

@@ -274,6 +274,13 @@ if (str_starts_with($path, '/api/')) {
         ['PATCH',  '#^/api/v1/admin/users/(\d+)/access$#', fn($id) => api_user_access_update((int) $id)],
         ['GET',    '#^/api/v1/admin/logs$#',              fn() => api_logs_index()],
         ['GET',    '#^/api/v1/admin/status$#',            fn() => api_admin_status()],
+        // A library's own jobs, reached through the library - which is what
+        // api_maintenance_index() has always said happens and, until now, did
+        // not: the checks existed and nothing served them.
+        ['GET',    '#^/api/v1/libraries/(\d+)/maintenance$#',
+                                                            fn($id) => api_library_maintenance_index((int) $id)],
+        ['POST',   '#^/api/v1/libraries/(\d+)/maintenance/([a-z_]+)$#',
+                                                            fn($id, $k) => api_library_maintenance_run((int) $id, (string) $k)],
         ['GET',    '#^/api/v1/admin/maintenance$#',       fn() => api_maintenance_index()],
         ['POST',   '#^/api/v1/admin/maintenance/([a-z_]+)$#',
                                                           fn($job) => api_maintenance_run((string) $job)],

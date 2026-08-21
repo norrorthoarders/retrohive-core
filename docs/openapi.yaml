@@ -3674,6 +3674,397 @@ paths:
                           item_images: { type: array, items: { type: integer } }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  # ---------------------------------------------------------------------------
+  # Money
+  # ---------------------------------------------------------------------------
+
+  /currencies:
+    get:
+      tags: [Taxonomy]
+      summary: The currencies an entry may be priced in
+      description: >
+        The list a picker is built from. Not the rates - what a dollar is worth
+        is `/admin/exchange-rates`, and a client offering somebody a currency
+        does not need to know.
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/exchange-rates:
+    get:
+      tags: [Admin]
+      summary: What a dollar has been worth, most recent first
+      description: >
+        Every currency the instance holds a rate for, with the day it was taken
+        and where it came from - so "why is this still in dollars" has an answer
+        on a page rather than in a log.
+      responses:
+        "200": { description: OK }
+        "403": { description: Not an administrator }
+
+  /admin/exchange-rates/refresh:
+    post:
+      tags: [Admin]
+      summary: Fetch today's rates
+      description: >
+        Answers with how many were written. A refusal upstream is a 502 and not a
+        422: nothing about the request was wrong.
+      responses:
+        "200": { description: OK }
+        "403": { description: Not an administrator }
+        "502": { description: The upstream source refused or could not be reached }
+
+  # ---------------------------------------------------------------------------
+  # What a copy has been worth
+  # ---------------------------------------------------------------------------
+
+  /items/{id}/prices:
+    get:
+      tags: [Items]
+      summary: What copies of this have been fetching, over time
+      description: >
+        A single price answers "what is it worth"; this answers "what has it been
+        doing", which is the question somebody deciding whether to sell actually
+        asks - and it is the whole reason observations are rows rather than a
+        column that gets overwritten.
+
+        Every condition band, not only the one matching this copy: somebody
+        watching a loose price climb while their own is boxed still wants to see
+        it. An entry in a library this account cannot read is **404**, not 403 -
+        the same shape the images route uses, and for the same reason.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such entry, or not one this account may see }
+
+  /items/{id}/observations:
+    get:
+      tags: [Items]
+      summary: The individual sightings behind that history
+      description: >
+        One row per observation - the amount, the band, the day and how often one
+        sells - rather than the series drawn from them. What a correction is
+        made against.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No such entry, or not one this account may see }
+
+  /observations/{id}:
+    patch:
+      tags: [Items]
+      summary: Correct one observation
+      description: >
+        The amount, and what it says about how often one sells. **Not** the band,
+        the title or the date: those are what the row *is*, and changing one
+        would be writing a different observation over this one rather than
+        correcting it. Send at least one of the three.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: number, exclusiveMinimum: 0 }
+                sales_count: { type: [integer, "null"], minimum: 0 }
+                volume_note: { type: [string, "null"] }
+      responses:
+        "200": { description: OK }
+        "403": { description: A read-only token }
+        "404": { description: No observation with that id }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Items]
+      summary: Drop an observation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "403": { description: A read-only token }
+        "404": { description: No observation with that id }
+
+  # ---------------------------------------------------------------------------
+  # Which sources answer for which branch
+  # ---------------------------------------------------------------------------
+
+  /categories/{id}/sources:
+    get:
+      tags: [Metadata]
+      summary: The sources this branch asks, and where each answer comes from
+      description: >
+        Each source with its state - set here, or inherited from an ancestor.
+        Which is the point: a branch showing "on" without saying whether that was
+        decided here or three levels up cannot be undone with any confidence.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: No category with that id }
+    post:
+      tags: [Metadata]
+      summary: Switch a source on or off here, or hand it back to the ancestry
+      description: >
+        `on` and `off` write a row against this branch; `inherit` removes it.
+        That third one matters: without it a branch could only ever be given an
+        explicit answer, and undoing a change would mean guessing what it used to
+        inherit.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id, state]
+              properties:
+                provider_id: { type: integer }
+                state: { type: string, enum: [on, off, inherit] }
+      responses:
+        "200": { description: OK }
+        "403": { description: Not yours to change, or a read-only token }
+        "404": { description: No category with that id }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  # ---------------------------------------------------------------------------
+  # Teaching a source what a machine is called
+  # ---------------------------------------------------------------------------
+
+  /admin/metadata-providers/{id}/platforms/{platform_id}:
+    post:
+      tags: [Metadata]
+      summary: What this source calls that machine
+      description: >
+        Written over, not ignored - this is the one place that is somebody saying
+        "no, it is called this", and the seeders fill gaps precisely so they do
+        not undo it.
+
+        A POST rather than a PUT because every other write on this resource is a
+        POST and no client here has a PUT: one verb for one endpoint would be a
+        method added to every client for tidiness rather than for a reason.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: platform_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [remote_platform_id]
+              properties:
+                remote_platform_id: { type: string, maxLength: 80 }
+      responses:
+        "200": { description: OK }
+        "403": { description: Not an administrator }
+        "404": { description: No such source, or no platform with that id }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Metadata]
+      summary: Forget that mapping, leaving the source to guess again
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: platform_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "403": { description: Not an administrator }
+
+  /admin/metadata-providers/{id}/forget:
+    post:
+      tags: [Metadata]
+      summary: Throw away everything cached from this source
+      description: >
+        Answers with how many rows went. The source itself stays configured -
+        this empties what it has said, not what it is.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "403": { description: Not an administrator }
+        "404": { description: No such metadata source }
+
+  # ---------------------------------------------------------------------------
+  # Connectors
+  # ---------------------------------------------------------------------------
+
+  /slot-types:
+    get:
+      tags: [Taxonomy]
+      summary: The connectors, sockets and form factors a machine may have
+      description: >
+        `hardware_vocab`, which is what `hardware_models.interface_vocab_id`
+        points at to say what a card plugs into. Platform 0 holds the ones every
+        machine shares - a serial port, SCSI - and `platform_id` adds that
+        family's own on top rather than replacing them. Each row carries how many
+        models use it, so nothing is removed blind.
+      parameters:
+        - name: platform_id
+          in: query
+          description: That family's connectors as well as the shared ones.
+          schema: { type: integer }
+        - name: kind
+          in: query
+          schema: { type: string, enum: [interface, feature, socket, formfactor] }
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Taxonomy]
+      summary: Add one
+      description: An administrator, or anybody with a library they may change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SlotTypeInput" }
+      responses:
+        "200": { description: OK }
+        "403": { description: No library you may change, or a read-only token }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /slot-types/{id}:
+    patch:
+      tags: [Taxonomy]
+      summary: Correct one
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SlotTypeInput" }
+      responses:
+        "200": { description: OK }
+        "403": { description: A read-only token }
+        "404": { description: No slot type with that id }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    put:
+      tags: [Taxonomy]
+      summary: Correct one (same handler as PATCH)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SlotTypeInput" }
+      responses:
+        "200": { description: OK }
+        "403": { description: A read-only token }
+        "404": { description: No slot type with that id }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove one
+      description: >
+        Refused while models still point at it, rather than leaving them naming
+        a connector that is not there.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "403": { description: A read-only token }
+        "404": { description: No slot type with that id }
+        "422": { description: Still in use by one or more models }
+
+  /libraries/{id}/maintenance:
+    get:
+      tags: [Admin]
+      summary: The checks that belong to this library
+      description: >
+        A top-level branch with no machine, a machine with no branch of its own,
+        an entry shelved in a place another library owns. These are the jobs
+        marked library-scoped in the engine, and until build 224 nothing served
+        them - `/admin/maintenance` says in its own description that it carries
+        the instance ones only, "because the library ones belong to a library and
+        are reached through it".
+
+        Every job comes back whether or not it found anything. A list that hides
+        the clean ones makes "all clear" and "not implemented" look the same,
+        which is the state that made this endpoint necessary.
+
+        Curator, not administrator: each one changes or reports on what is filed
+        in one library, which is what a curator is for.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Not a library you may curate }
+        "404": { description: No library with that id }
+
+  /libraries/{id}/maintenance/{job}:
+    post:
+      tags: [Admin]
+      summary: Run one of them
+      description: >
+        The check runs again afterwards, so `count` is what is left rather than
+        what was found before. A job that only reports is refused with 422 rather
+        than quietly doing nothing.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: job
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[a-z_]+$" }
+      responses:
+        "200": { description: OK }
+        "403": { description: Not a library you may curate, or a read-only token }
+        "404": { description: No library with that id, or no library job by that name }
+        "422": { description: That job reports and does not repair }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3706,6 +4097,21 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    SlotTypeInput:
+      type: object
+      description: >
+        A connector, socket, form factor or feature. `code` is what a machine's
+        row names it by, and it must be unique for its kind and family - platform
+        0 being the shared one every machine has.
+      properties:
+        name: { type: string, maxLength: 120 }
+        code: { type: string, maxLength: 40 }
+        kind: { type: string, enum: [interface, feature, socket, formfactor] }
+        platform_id:
+          type: integer
+          description: 0 for the connectors every machine shares.
+      required: [name]
+
     Error:
       type: object
       properties:

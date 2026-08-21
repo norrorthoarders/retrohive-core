@@ -22,42 +22,56 @@ this API is web-client-only.
 
 ## How a request reaches the database
 
-One PHP application today, not yet split into a separate headless service — `public/index.php`
-routes to either the JSON API or the HTML pages, and both call the same `src/` functions, which
-call MariaDB directly. `retrohive-clients-web`'s own `MIGRATION.md` is the record of what a real
-split would take.
+**The split has happened.** This repository is the engine: `/api/v1/*`, and a short list of paths
+that cannot be anything else. The screens are `retrohive-clients-web`, a separate application on a
+separate origin that speaks to this one over the same HTTP API the phones use — so there is no path
+into the data that a client could not take, and no rule that only the web knows.
+
+What is left here that is not the API:
+
+- **`/setup`**, first-run only. It is the one screen the engine kept, because there is nobody to
+  sign in as yet and so no session for a client to hold.
+- **`/robots.txt`, `/healthz`, `/status`** — the things asked by something that is not a person.
+- **`/items/export.csv`**, which no screen links to.
+- **`/`**, which sends a browser to the client named in the `client_url` setting, and answers 503
+  when nothing has told it where that is.
 
 ```mermaid
 flowchart LR
     subgraph Clients
-        W[Web client]
+        W["retrohive-clients-web\n(its own application,\nits own origin)"]
         I[iOS client]
         A[Android client]
-        WUI[This repo's own\nweb pages]
     end
 
     W -- HTTPS/JSON --> IDX
     I -- HTTPS/JSON --> IDX
     A -- HTTPS/JSON --> IDX
-    WUI -- same process --> IDX
 
-    subgraph "retrohive (this repo)"
+    subgraph "retrohive-core (this repo)"
         IDX["public/index.php\n(front controller)"]
-        API["/api/v1/* routes\nJSON in, JSON out"]
-        WEB["everything else\nHTML pages"]
-        SRC["src/\nmodels, rules, acl —\nthe same functions\neither path calls"]
+        API["/api/v1/*\nJSON in, JSON out"]
+        OPEN["/setup, /healthz,\n/robots.txt, export.csv"]
+        SRC["src/\nmodels, rules, acl —\nwhere every rule lives"]
         IDX --> API --> SRC
-        IDX --> WEB --> SRC
+        IDX --> OPEN --> SRC
     end
 
     SRC -->|"one(), all(), q()"| DB[(MariaDB)]
 ```
 
+**Every rule is on this side, and that is the point of the shape.** A client asking whether a
+lookup is worth offering, whether a branch may be deleted, or what floor a place is on gets the
+same answer as every other client, because it asks rather than works it out. The failures that
+came out of the split were all the same shape in reverse: a rule left behind in a screen that
+moved, or a guard whose only caller went with it.
+
 ## Authentication and trust
 
 A password is sent exactly once, to sign in. Everything after that is a bearer token — the same
-mechanism for every client, including this repository's own web pages, which hold a token in the
-session rather than a raw password.
+mechanism for every client, including the web client, which holds a token in its own session rather
+than a raw password. It is a client like the others; it just happens to keep its token server-side
+because a browser is a poor place to keep one.
 
 ```mermaid
 sequenceDiagram
