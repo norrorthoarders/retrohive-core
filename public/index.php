@@ -560,7 +560,14 @@ if (str_starts_with($path, '/api/')) {
 // route, against the mode, and a wrong one answers 404 like everything else.
 // Paths reachable without a session. /login and /register went with the screens
 // they were - what is left is first-run setup and the things other services ask.
-$open = ['/setup', '/robots.txt', '/healthz', '/status', '/status.json', '/status/debug'];
+//
+// `/` is on it, and has to be. This application serves no page a person reads,
+// so the root's whole job is to send somebody to the client that does - which it
+// cannot do from behind a guard demanding a session first. It was left off when
+// the screens moved out, so arriving at the engine's root sent a stranger to
+// /login, which no longer exists here, whose own route sent them to /login
+// again: a loop with nothing at the end of it, reported from a live instance.
+$open = ['/', '/setup', '/robots.txt', '/healthz', '/status', '/status.json', '/status/debug'];
 $openPrefixes = ['/join/', '/invite/'];
 $isOpenPath = in_array($path, $open, true);
 foreach ($openPrefixes as $prefix) {
@@ -573,7 +580,14 @@ if (!config('public_browse') && !is_logged_in() && !$isOpenPath) {
     if (user_count() === 0) {
         redirect('/setup');
     }
-    redirect('/login', ['next' => $path]);
+    // To the client, not to /login.
+    //
+    // There is no /login here any more - it went with the screens - so this sent
+    // people to a path this application does not serve, and the fallback route
+    // sent them back to it. Somebody signing in belongs at the client's own
+    // sign-in page, which is where to_client() goes; and where no client is
+    // configured it says so plainly rather than looping.
+    to_client();
 }
 
 // Record which library the person is working in, once per request.

@@ -1,5 +1,31 @@
 # Changelog
 
+**The engine's root sent people to a sign-in it does not serve.**
+
+Surfing to the instance landed on `/login?next=%2Flogin` and stayed there. Two
+faults, one after the other:
+
+- **`/` was not on the list of paths reachable without a session.** That list was
+  updated when the screens moved to the web client, and the root was left off it -
+  so the one route whose entire job is to redirect somebody to the client sat
+  behind a demand that they sign in first.
+- **And the guard redirected to `/login`, which went with the screens.** The
+  fallback route then sent them back to `/login`: a loop with nothing at the end
+  of it.
+
+`/` is open now, and the guard calls `to_client()` - somebody signing in belongs
+at the client's own sign-in page. Where no client is configured it still says
+"No interface configured" rather than looping.
+
+The API is untouched: `/api/v1/items` without a token still answers 401 rather
+than redirecting, which is what a client needs to hear.
+
+`tests/web.sh` asserts the root redirects to the client and *not* to `/login`.
+Verified by restoring both halves of the fault: the two new assertions fail with
+`http://127.0.0.1:8099/login?next=%2F`, which is the address that was reported.
+
+This package is **build 239**.
+
 **A setting that governed nothing.**
 
 `libraries_deletable` has sat on the Security tab labelled "Owners may
