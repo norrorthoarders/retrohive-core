@@ -1,5 +1,36 @@
 # Changelog
 
+**The install guide stopped at the engine.**
+
+Six steps, ending at first run, and nothing about the web interface - so
+following it gets you an API, a working phone, and a browser that says "Not
+configured". It has a step of its own now: a second checkout, a second vhost,
+`CORE_ENGINE_URL` and `CORE_ENGINE_UPLOADS_URL`, and the `client_url` setting on
+the engine, **before** first run rather than after, because first run ends by
+handing the browser onward.
+
+**The web installer does not do this**, and the guide now says so where somebody
+meets it rather than where it would be tidy. `public/install.php` has no field
+for `client_url`: a clean run still lands on the 503, with the account made and
+the database loaded. That is a gap and not a decision - the installer predates
+the split and nobody has been through it since.
+
+**Two symptoms rewritten because they are no longer subtle.** A missing
+`Authorization` header used to mean "the web interface works and the API returns
+401"; the interface is a client and carries a bearer token, so now it means
+setup succeeds and every screen after it reports that the server did not answer.
+Troubleshooting gained that one, "setup finishes and lands on Not configured",
+and "every page fails but the phones are fine" - which is `CORE_ENGINE_URL`, and
+the phones are unaffected because they talk to the engine directly.
+
+**And the post-install steps described a catalogue from two versions ago:**
+"Manage → Libraries, ten come pre-loaded", "Software types and Genres". A shelf
+starts empty on purpose - an account made by a directory should not arrive
+holding sixty-three platforms it never asked for - and the structure is copied in
+from the library's own edit page, in whichever parts somebody wants.
+
+This package is **build 227**.
+
 **The deployment guide would have left somebody with no web interface.**
 
 It described one Apache serving both the API and the web UI, from one document

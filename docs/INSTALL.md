@@ -1,7 +1,16 @@
 # Installing RetroHive
 
-A manual install onto a LAMP server you already run. There is no installer and
-no container: copy the files, create a database, point a vhost at `public/`.
+A manual install onto a LAMP server you already run. There is no container: copy
+the files, create a database, point a vhost at `public/`.
+
+**Two applications.** `retrohive-core` is the engine - `/api/v1`, first-run
+setup, and a short list of paths that cannot be anything else.
+`retrohive-clients-web` is the browser interface, and it is a client: no database
+credentials, no database call, reaching the data over the same HTTP API a phone
+uses. Install the engine first and the interface second; the engine runs without
+it, and a browser pointed at the engine alone will say so.
+
+The phones need only the engine.
 
 - [Requirements](#requirements)
 - [1. Database](#1-database)
@@ -9,7 +18,8 @@ no container: copy the files, create a database, point a vhost at `public/`.
 - [3. Configuration](#3-configuration)
 - [4. Web server](#4-web-server)
 - [5. PHP settings](#5-php-settings)
-- [6. First run](#6-first-run)
+- [6. The web interface](#6-the-web-interface)
+- [7. First run](#7-first-run)
 - [Users and library access](#users-and-library-access)
 - [Connecting native apps](#connecting-native-apps)
 - [Behind a reverse proxy](#behind-a-reverse-proxy)
@@ -76,6 +86,16 @@ and the installer locks itself.
 If the config file exists but the web server cannot *read* it — a common result
 of copying it in as root — you get a page naming the file and the exact
 `chgrp`/`chmod` to run, instead of a 500 with a stack trace.
+
+**It installs the engine, and only the engine.** It has no field for
+`client_url`, so a run that finishes cleanly still lands on a 503 headed "Not
+configured" when it hands the browser onward - the account is made, the database
+is loaded, and there is nowhere to go. Install the interface as in
+[6. The web interface](#6-the-web-interface) and set the setting; then sign in
+there.
+
+That it does not ask is a gap rather than a decision: the installer predates the
+split and nobody has been through it since.
 
 At the end, the installer offers the finished `config.local.php` as a download.
 That matters when `src/` is not writable by the web server, which is the safer
@@ -475,9 +495,11 @@ server {
 }
 ```
 
-That `fastcgi_param HTTP_AUTHORIZATION` line is easy to miss and its absence
-produces a confusing symptom: the web interface works perfectly while every API
-call returns 401.
+That `fastcgi_param HTTP_AUTHORIZATION` line is easy to miss, and since the split
+its absence is no longer subtle: **nothing works**. The web interface is a client
+and carries a bearer token like the phones do, so first-run setup succeeds -
+that page needs no token - and every screen after it reports that the server did
+not answer.
 
 ### Installing in a subdirectory
 
@@ -513,11 +535,68 @@ one request. The app's own `uploads.max_bytes` should sit at or below
 
 ---
 
-## 6. First run
+## 6. The web interface
 
-Open the site. With no accounts in the database it redirects to `/setup` and
-offers to create the administrator. **Do this before the app is reachable from
-anywhere you do not control** — that page is necessarily unauthenticated.
+A second checkout and a second vhost. It needs no database access and no
+`config.local.php`: it is told where the engine is through the environment.
+
+```bash
+cd /opt
+git clone https://github.com/norrorthoarders/retrohive-clients-web.git
+chown -R www-data:www-data /opt/retrohive-clients-web
+```
+
+```apache
+<VirtualHost *:80>
+    ServerName app.example.com
+    DocumentRoot /opt/retrohive-clients-web/public
+
+    <Directory /opt/retrohive-clients-web/public>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    # Where the engine is. Loopback when both are on this machine: a request
+    # that leaves to come straight back is two TLS handshakes for nothing.
+    SetEnv CORE_ENGINE_URL         http://127.0.0.1/api/v1
+    # A public address, and deliberately not the same one. The client fetches
+    # from the API itself; the *browser* fetches the photographs, so an internal
+    # address here is a broken image on every device off this network.
+    SetEnv CORE_ENGINE_UPLOADS_URL https://retro.example.com/uploads
+
+    ErrorLog  /var/log/apache2/retrohive-web-error.log
+    CustomLog /var/log/apache2/retrohive-web-access.log combined
+</VirtualHost>
+```
+
+And tell the engine where the interface is, or `https://retro.example.com/` will
+answer 503 rather than sending a browser to it:
+
+```sql
+INSERT INTO settings (`key`, value) VALUES ('client_url', 'https://app.example.com')
+    ON DUPLICATE KEY UPDATE value = VALUES(value);
+```
+
+Setting it now rather than after first run matters, because first run ends by
+handing the browser to the interface - see the next section.
+
+---
+
+## 7. First run
+
+Open **the engine's** address. With no accounts in the database it redirects to
+`/setup` and offers to create the administrator - that page is the engine's, and
+it is the one screen the engine kept, because there is nobody to sign in as yet
+and so no session for a client to hold. **Do this before the app is reachable
+from anywhere you do not control**; the page is necessarily unauthenticated.
+
+Finishing it hands the browser to the web interface. If `client_url` is unset,
+what you get instead is a 503 headed "Not configured" - **after** the account has
+been created successfully. Nothing is wrong with the account; the engine has
+nowhere to send you. Set it and open the interface directly.
+
+Everything after this is the interface's: sign in there, not at the engine.
 
 Or from the command line:
 
@@ -527,26 +606,31 @@ php bin/create-user.php --list
 php bin/create-user.php --reset tommy
 ```
 
-Then:
+Then, in the interface:
 
-1. **Manage → Libraries.** Ten come pre-loaded. Give each a shelf colour; that
+1. **A library.** One is made with the account. Give it a shelf colour; that
    colour becomes the spine on every card and row for that library, which is
    what makes a mixed list scannable.
-2. **Manage → Software types** and **Genres**, if the defaults do not match how
-   you think about your collection. Genres attach to a type, which is what makes
-   the entry form show only relevant options.
-3. **Add title.** Only title, library and software type are required.
-   Developer and publisher accept free text — type a studio that does not exist
-   and it is created and linked automatically.
+2. **Structure, if you want any.** A shelf starts empty - an account created by
+   a directory should not arrive holding sixty-three platforms it never asked
+   for. The library's own edit page copies the shipped machines, categories,
+   makers and example models across, in whichever parts you want.
+3. **Manage → Categories**, if the shipped tree does not match how you think
+   about your collection. A branch says what kind of thing it holds, and that is
+   what makes the entry form offer only the relevant places to file something.
+4. **Add an entry.** Only title, platform and category are required. Developer
+   and publisher accept free text - type a studio that does not exist and it is
+   created and linked automatically.
 
 ---
 
 ## Behind HAProxy, on separate machines
 
 If the web server and database live on different VMs with a proxy in front,
-follow **[DEPLOYMENT.md](DEPLOYMENT.md)** instead of this section — it covers
-the three settings that must line up (`trusted_proxies`, `base_url`, and the
-MariaDB bind address) and the HAProxy configuration to match.
+follow **[DEPLOYMENT.md](DEPLOYMENT.md)** instead of this section — it covers the
+four things that must line up (`trusted_proxies`, `base_url`, the MariaDB bind
+address, and the pair of settings the two applications use to find each other)
+and the HAProxy configuration to match.
 
 ## Directory sign-in
 
@@ -787,10 +871,20 @@ in `config.local.php` to see the real PDO error, then set it back.
 `mod_rewrite` is off, or `AllowOverride` is not `All`, so `public/.htaccess` is
 ignored. On nginx, the `try_files` line is missing.
 
-**The web interface works but every API call returns 401**
-The `Authorization` header is not reaching PHP. On nginx add
-`fastcgi_param HTTP_AUTHORIZATION $http_authorization;`. On Apache make sure
-`AllowOverride All` is set so the rewrite rule in `public/.htaccess` applies.
+**Setup works and every screen after it fails**
+The `Authorization` header is not reaching PHP, so every request the interface
+makes on your behalf comes back 401. Setup is the exception because it carries no
+token. On nginx add `fastcgi_param HTTP_AUTHORIZATION $http_authorization;`. On
+Apache make sure `AllowOverride All` is set so the rewrite rule in
+`public/.htaccess` applies.
+
+**Setup finishes and lands on "Not configured"**
+The account was created; the engine has nowhere to send you. Set `client_url` to
+the interface's address - see [6. The web interface](#6-the-web-interface).
+
+**Every page says the server did not answer, but the phones are fine**
+`CORE_ENGINE_URL` on the interface's vhost is wrong or unset. The phones are
+unaffected because they talk to the engine directly.
 
 **Uploads silently do nothing**
 Almost always `post_max_size`. When a POST exceeds it, PHP discards the entire
