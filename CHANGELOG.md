@@ -1,5 +1,68 @@
 # Changelog
 
+**`location_position` was write-only.**
+
+The column exists, `api_item_input()` accepts it, and the entry page has a line
+ready to print it - and `item_to_api()` never sent it back. So somebody could
+record where on a shelf a copy sits, "third row, behind the Amigas", save it, and
+never see it again on any client. The engine took it and kept it to itself.
+
+Sent now, on the full shape beside the location it belongs to.
+
+Found by sweeping the fields the web templates index out of the payload against
+what the engine actually builds - forty-eight against seventy - which is now
+`tests/payloads.php`'s third check of the same contract.
+
+This package is **build 244**.
+
+**Renaming the instance did nothing.**
+
+The General tab has an "Instance name" field, the installer writes it, and
+**nothing read it**: every place that shows the name - the page title, the bar,
+the 404, the API's own description - asked `config('app_name')`, which is the
+configuration file. So somebody could rename their instance, be told it saved,
+and see the old name everywhere.
+
+The same shape as the currency bug a week ago: two places holding one fact, with
+the screen editing the one nobody reads. `instance_name()` prefers the setting and
+falls back to the file, guarded like `display_currency()` because it is called
+from a 404 page and from early boot where there may be no database at all. A
+blank setting falls back rather than showing nothing.
+
+**Found by sweeping for the rest, after `libraries_deletable` turned up the same
+way by accident.** Of 30 fields on the settings screens, that was the only one -
+the two syslog facilities are read through a key built at run time, and
+`structure_source` is read with its default wrapped onto the next line, so both
+looked dead and are not.
+
+This package is **build 243**.
+
+**"Copy the filing structure into new libraries" did not reach the personal one.**
+
+Which is the first library anybody sees. A fresh install with the setting on -
+and it is on by default - handed its administrator an empty shelf, on an instance
+that had just said it would fill it.
+
+`ensure_first_library()` started empty unconditionally. That was deliberate once:
+an account made by a directory should not arrive holding sixty-three platforms it
+never asked for. But `library_autofill` **is** that decision, made once by an
+administrator rather than by the code, and its label says *new libraries* - a
+personal one is new. An instance that wants the old behaviour switches it off.
+
+Examples are still never put on a personal shelf: somebody's own library should be
+waiting for their own collection, not pre-filled with entries that are not theirs.
+
+**Three comments claimed things that were not true.** `ensure_first_library()`
+said "the installer seeds its administrator's library explicitly, so a fresh
+instance still has something to look at" - it does not, `bin/install.php` calls
+this function and nothing else. The installer said it was "deliberately not
+seeded here". `INSTALL.md` said a shelf starts empty. All three now say what
+happens.
+
+Pinned in `tests/acl.php`, both directions.
+
+This package is **build 242**.
+
 **A sale typed into the form was thrown away on save.**
 
 Fill in Sold on and Sold for, save, come back: the entry exactly as it was, and

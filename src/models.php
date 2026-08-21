@@ -1143,19 +1143,29 @@ function ensure_first_library(int $ownerId, string $name = 'My Private Library')
     q('INSERT IGNORE INTO library_members (library_id, user_id, access) VALUES (?, ?, ?)',
       [$id, $ownerId, ACCESS_OWNER]);
 
-    // A new personal shelf starts empty.
+    // Filled in when the instance says so, like any other new library.
     //
-    // It used to be filled with the whole starter set - sixty-three platforms, a hundred
-    // and fifty makers, three and a half thousand categories - the moment an account
-    // first signed in. For an account created by a directory that is a shelf somebody
-    // never asked for, full of machines they may have no interest in, and the only way
-    // back was to delete it all by hand.
+    // This started empty on purpose: it used to be filled with the whole starter
+    // set the moment an account first signed in, and for an account created by a
+    // directory that is a shelf somebody never asked for, full of machines they
+    // have no interest in, with no way back but deleting it by hand.
     //
-    // Synchronising is one button on the library's own page and it says exactly what it
-    // will copy. Starting empty and choosing is better than starting full and pruning.
+    // `library_autofill` is that decision made once, by an administrator, on the
+    // Catalogue tab - and its label says *new libraries*, which a personal one
+    // is. An instance that wants the old behaviour switches it off; an instance
+    // that leaves it on was promising something it did not deliver here, because
+    // this was the one library the setting did not reach.
     //
-    // The installer seeds its administrator's library explicitly, so a fresh instance
-    // still has something to look at.
+    // A comment here used to claim "the installer seeds its administrator's
+    // library explicitly, so a fresh instance still has something to look at".
+    // It does not - `bin/install.php` calls this function and nothing else - so a
+    // fresh instance's first library was empty and the comment said otherwise.
+    //
+    // Structure only, never examples: the same line the installer draws, and the
+    // same one api_libraries_create() draws.
+    if ((string) setting('library_autofill', '1') === '1') {
+        seed_library_hardware($id);
+    }
 
     return $id;
 }

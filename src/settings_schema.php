@@ -201,14 +201,19 @@ function settings_schema(): array
                     'default' => 'https://raw.githubusercontent.com/norrorthoarders/retrohive-core/main/structure',
                     'max'     => 255,
                 ],
-                // What a library made by somebody who was not asked starts with.
+                // What a new library starts with - **every** new library.
                 //
-                // A shelf starts empty on purpose - an account made by a
+                // Shelves started empty on purpose: an account made by a
                 // directory should not arrive holding sixty-three platforms it
-                // never asked for - but that reasoning is about accounts created
-                // *for* people. Somebody who presses "new library" has asked for
-                // a place to file things, and handing them an empty tree means
-                // building one before they can file anything at all.
+                // never asked for. This setting is that decision made once, by an
+                // administrator, rather than by the code - so an instance that
+                // wants the old behaviour switches it off.
+                //
+                // It reaches a personal library as well as one somebody creates,
+                // which it did not at first: the label says *new libraries*, a
+                // personal one is new, and the first thing a fresh instance's
+                // administrator saw was an empty shelf on an instance that had
+                // promised to fill it.
                 //
                 // Structure only. Examples are somebody else's collection and
                 // stay off: the installer draws the same line, and for the same

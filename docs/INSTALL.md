@@ -612,10 +612,13 @@ Then, in the interface:
 1. **A library.** One is made with the account. Give it a shelf colour; that
    colour becomes the spine on every card and row for that library, which is
    what makes a mixed list scannable.
-2. **Structure, if you want any.** A shelf starts empty - an account created by
-   a directory should not arrive holding sixty-three platforms it never asked
-   for. The library's own edit page copies the shipped machines, categories,
-   makers and example models across, in whichever parts you want.
+2. **Structure, if you want any.** New libraries - including the personal one
+   every account gets - are filled with the shipped machines, categories and
+   makers when **Manage → Settings → Catalogue → Copy the filing structure into
+   new libraries** is on, which it is by default. Switch it off if an account
+   created by a directory should not arrive holding sixty-three platforms it
+   never asked for. Either way the library's own edit page copies them across
+   later, in whichever parts you want.
 3. **Manage → Categories**, if the shipped tree does not match how you think
    about your collection. A branch says what kind of thing it holds, and that is
    what makes the entry form offer only the relevant places to file something.

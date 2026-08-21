@@ -27,7 +27,7 @@ declare(strict_types=1);
 function api_meta(): void
 {
     api_ok([
-        'name'            => config('app_name'),
+        'name'            => instance_name(),
         // The server's own version, which is not the API's and not any client's.
         // A bug report that says "0.5" without saying which 0.5 is half a report.
         'app_version'     => APP_VERSION,

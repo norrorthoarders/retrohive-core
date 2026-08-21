@@ -26,7 +26,7 @@ if (!empty($noindex) || !search_indexing_allowed()):
 ?>
 <meta name="robots" content="noindex, nofollow">
 <?php endif; ?>
-<title><?= e($pageTitle) ?> · <?= e(config('app_name')) ?></title>
+<title><?= e($pageTitle) ?> · <?= e(instance_name()) ?></title>
 <link rel="stylesheet" href="<?= e(asset_url('/assets/css/app.css')) ?>">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%231e1e2e'/><rect x='6' y='6' width='5' height='20' fill='%23f38ba8'/><rect x='13' y='6' width='5' height='20' fill='%23a6e3a1'/><rect x='20' y='6' width='6' height='20' fill='%2389b4fa'/></svg>">
 </head>
@@ -89,7 +89,7 @@ if (!empty($noindex) || !search_indexing_allowed()):
 
 <?php if (!$bare): ?>
 <footer class="footer">
-  <span><?= e(config('app_name')) ?> — <?= e(config('app_tagline')) ?></span>
+  <span><?= e(instance_name()) ?> — <?= e(config('app_tagline')) ?></span>
   <?php
     // Two unfiltered COUNT(*)s on every page load, counting soft-deleted rows
     // and entries in libraries the viewer cannot see - so the number quietly

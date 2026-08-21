@@ -772,6 +772,14 @@ function item_to_api(array $r, bool $withImages = false): array
                                (string) $r['currency'],
                                $r['acquired_on'] ?? null),
         'currency'         => $r['currency'],
+        // Where on the shelf, which the engine has taken and stored and never
+        // sent back.
+        //
+        // `items.location_position` is a real column, `api_item_input()` accepts
+        // it, and the entry page has a line ready to print it - so somebody could
+        // record "third row, behind the Amigas", save it, and never see it
+        // again on any client. It was write-only.
+        'location_position' => $r['location_position'] ?? null,
         'location'         => $r['location_id'] === null ? null : [
             'id'   => (int) $r['location_id'],
             'name' => $r['location_name'],

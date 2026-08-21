@@ -9,6 +9,32 @@ declare(strict_types=1);
 require_once __DIR__ . '/stock.php';
 
 /** Read a config key, optionally dotted: config('db.host'). */
+/**
+ * What this instance calls itself.
+ *
+ * The settings screen has an "Instance name" field, the installer writes it, and
+ * **nothing read it**: every place that shows the name asked `config('app_name')`,
+ * which is the configuration file. So renaming an instance on the screen saved,
+ * reported success, and changed nothing anybody could see.
+ *
+ * The same shape as the currency: two places holding one fact, with the screen
+ * editing the one nobody reads. The setting wins where there is one, because it
+ * is the half a person can reach.
+ *
+ * Guarded like `display_currency()`, and for the same reason: this is called from
+ * a 404 page and from early boot, where the database may not be there at all.
+ */
+function instance_name(): string
+{
+    if (function_exists('setting')) {
+        $set = setting('instance_name');
+        if (is_string($set) && trim($set) !== '') {
+            return trim($set);
+        }
+    }
+    return (string) (config('app_name') ?: 'RetroHive');
+}
+
 function config(?string $key = null, $default = null)
 {
     static $cfg = null;
@@ -417,7 +443,7 @@ function money(?float $amount, ?string $currency = null): string
  */
 function render(string $template, array $vars = []): void
 {
-    $vars['pageTitle'] = $vars['pageTitle'] ?? config('app_name');
+    $vars['pageTitle'] = $vars['pageTitle'] ?? instance_name();
     extract($vars, EXTR_SKIP);
     ob_start();
     require APP_ROOT . '/templates/' . $template . '.php';
