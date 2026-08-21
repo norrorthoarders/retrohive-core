@@ -1,5 +1,63 @@
 # Changelog
 
+**A library somebody creates starts with the filing structure again.**
+
+"It starts out empty" was the answer when a client said nothing either way, and
+it is a poor one for somebody who has just pressed *new library*: they asked for
+a place to file things and got a tree to build first. The reasoning it came from
+- an account made by a directory should not arrive holding sixty-three platforms
+it never asked for - is about accounts created *for* people, not about somebody
+asking.
+
+`library_autofill` on the Catalogue tab decides it, and defaults on. A client
+that asks for structure or examples outright is still obeyed; this only fills the
+silence.
+
+**Examples are never the silent answer**, whatever the setting says. Those are
+somebody else's collection rather than scaffolding - the same line the installer
+has always drawn.
+
+**The install guide named an answer-file key that does not exist.** It documented
+`templates` where both installers read `structure`, so a response file written
+from the guide would have been ignored and the default used. The key, its three
+values and the fact that `examples` is off by default are written out properly
+now. The behaviour was already right: checked by parsing a response file that
+sets both and reading back what the installer would use.
+
+This package is **build 230**.
+
+**A fresh install has no exchange rates, so it cannot convert anything.**
+
+Both installers have asked for a currency for as long as they have existed, and
+neither fetched a rate for it. So an instance set to SEK whose sources quote in
+dollars answered "what is this worth" with the source's own currency and no
+conversion - which reads as the feature not working rather than as a table
+nobody has filled.
+
+`installer_seed_exchange_rates()` runs beside the metadata step in both, and
+reports what it got. Not fatal: it reaches the European Central Bank, and an
+install behind a firewall that cannot must still finish. It is the one step here
+whose failure costs nothing that cannot be had later with one press.
+
+**And saving a setting no longer goes to the internet.** Choosing a currency used
+to fetch the rates as a side effect of the save, so a save could sit waiting on
+somebody else's server and then succeed - which reads as saving being slow. It
+also fetched *only* when there was no rate at all, so the one case somebody
+actually wants - "these look stale, get today's" - was the case it skipped.
+`POST /admin/exchange-rates/refresh` is the button that does it.
+
+This package is **build 229**.
+
+**A sale price says it sold, not just a sale date.**
+
+`api_item_input()` settled the status from `sold_on` alone, so filling in what a
+copy fetched and nothing else left an entry marked owned with a sale on it -
+which the very next rule then wiped, because owned means no sale block. Two
+fields, one fact: either half of a sale now settles the status, unless the caller
+said otherwise in the same breath.
+
+This package is **build 228**.
+
 **The install guide stopped at the engine.**
 
 Six steps, ending at first run, and nothing about the web interface - so

@@ -650,6 +650,16 @@ if ($a['install']['metadata_sources']) {
     // metadata_sources is the default for a source [metadata] does not name -
     // not a gate in front of it, or naming one would have no effect on a file
     // that had switched the rest off.
+    // A rate for the instance's own currency, before anything is priced in it.
+    //
+    // An instance set to SEK whose sources quote in dollars cannot convert
+    // without one, and nothing used to fetch it - the table started empty and
+    // stayed that way until somebody found the refresh in the admin pages.
+    $rates = installer_seed_exchange_rates();
+    say($rates['written'] > 0
+        ? sprintf('Exchange rates: %d fetched', $rates['written'])
+        : 'Exchange rates: none fetched (' . ($rates['error'] ?? 'no answer') . ')');
+
     $sources = installer_enable_metadata_sources(
         $a['metadata'] ?? [],
         (bool) ($a['install']['metadata_sources'] ?? true)

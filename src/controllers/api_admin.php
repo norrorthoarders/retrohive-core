@@ -334,23 +334,19 @@ function api_settings_update(): void
         set_setting($name, $value);
     }
 
-    // Choosing a currency fetches the rates to convert by.
+    // Saving a setting does not go to the internet.
     //
-    // Without this the setting is only half a decision: everything carries on
-    // showing dollars until somebody runs the command, and nothing on the page
-    // says that is what is missing. Somebody who picks kronor has said what they
-    // want, and this is what it takes.
+    // Choosing a currency used to fetch the rates to convert by, on the
+    // reasoning that the setting is only half a decision without them. It is -
+    // but a save that reaches the European Central Bank takes as long as that
+    // takes, and when the bank is slow or unreachable the page hangs and then
+    // saves, which reads as the save being the slow part. It also fetched only
+    // when there was no rate yet, so the one case somebody actually wants -
+    // "these numbers look stale, get today's" - was the case it skipped.
     //
-    // Only when the currency changed, and only when there is no rate for it yet
-    // - a source that is having a bad afternoon should not be asked again on
-    // every unrelated save. A failure is not an error either: the setting is
-    // saved, the conversion falls back to dollars, and the entry page says so.
-    if (array_key_exists('display_currency', $checked)) {
-        $wanted = (string) $checked['display_currency'];
-        if ($wanted !== '' && $wanted !== 'USD' && exchange_rate($wanted) === null) {
-            exchange_rates_refresh();
-        }
-    }
+    // `POST /admin/exchange-rates/refresh` is the button that does it, on the
+    // same page, where pressing it is somebody asking rather than a side effect
+    // of saving something else.
 
     api_settings_show();
 }

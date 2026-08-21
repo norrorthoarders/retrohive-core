@@ -184,6 +184,28 @@ function settings_schema(): array
                     'default' => 'https://raw.githubusercontent.com/norrorthoarders/retrohive-core/main/structure',
                     'max'     => 255,
                 ],
+                // What a library made by somebody who was not asked starts with.
+                //
+                // A shelf starts empty on purpose - an account made by a
+                // directory should not arrive holding sixty-three platforms it
+                // never asked for - but that reasoning is about accounts created
+                // *for* people. Somebody who presses "new library" has asked for
+                // a place to file things, and handing them an empty tree means
+                // building one before they can file anything at all.
+                //
+                // Structure only. Examples are somebody else's collection and
+                // stay off: the installer draws the same line, and for the same
+                // reason.
+                'library_autofill' => [
+                    'kind'    => 'bool',
+                    'label'   => 'Copy the filing structure into new libraries',
+                    'help'    => 'Machines, companies and category trees, copied in when somebody '
+                               . 'creates a library and does not say either way. Example entries are '
+                               . 'never copied - those are somebody else\'s collection rather than '
+                               . 'scaffolding. A client that asks for one or the other outright is '
+                               . 'obeyed; this is only the answer when it says nothing.',
+                    'default' => '1',
+                ],
                 'stock_images' => [
                     'kind'    => 'bool',
                     'label'   => 'Generic pictures for entries with no photograph',

@@ -1770,6 +1770,16 @@ if ($running) {
                     // does not name, not a gate in front of it - a file that
                     // switched the general flag off and named one source by hand
                     // means that one, and gating would have dropped it.
+                    // A rate for the instance's own currency, before anything is
+                    // priced in it. An instance set to SEK whose sources quote
+                    // in dollars cannot convert without one, and nothing used to
+                    // fetch it: the table started empty and stayed that way
+                    // until somebody found the refresh in the admin pages.
+                    $rates = installer_seed_exchange_rates();
+                    $log[] = $rates['written'] > 0
+                        ? sprintf('Exchange rates: %d fetched', $rates['written'])
+                        : 'Exchange rates: none fetched (' . ($rates['error'] ?? 'no answer') . ')';
+
                     $sources = installer_enable_metadata_sources(
                         recall('metadata', []) ?: [],
                         (string) recall('metadata_sources', '1') === '1'

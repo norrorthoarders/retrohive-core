@@ -814,10 +814,14 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
     // rule.
     $saleKeys = ['sold_on', 'sold_to', 'sold_price', 'sold_currency', 'sold_note'];
 
-    // A sale date says it sold, unless the caller said otherwise in the same
-    // breath. Somebody filling in when they sold it has told you it is sold, and
-    // making them also change a dropdown is asking twice.
-    if (!$has('status') && !empty($data['sold_on'])) {
+    // A sale says it sold, unless the caller said otherwise in the same breath.
+    //
+    // Either half of it: somebody who fills in what a copy fetched has told you
+    // it is sold just as plainly as somebody who fills in when. This used to
+    // read the date alone, so typing a price and nothing else left an entry
+    // marked owned with a sale on it - which the next rule then wiped, because
+    // owned means no sale block. Two fields, one fact.
+    if (!$has('status') && (!empty($data['sold_on']) || !empty($data['sold_price']))) {
         $data['status'] = 'sold';
     }
 
@@ -5106,10 +5110,25 @@ function api_libraries_create(): void
     // create page already calls, not a second copy of what it does. "It
     // starts out empty" is a real, valid answer when neither flag is sent,
     // which is why this only runs at all when asked for.
+    // A client that says nothing gets the instance's answer.
+    //
+    // "It starts out empty" was that answer, and it is a poor one for somebody
+    // who has just pressed "new library": they asked for a place to file things
+    // and got a tree they have to build first. `library_autofill` decides it,
+    // defaults on, and a client that asks for structure or examples outright is
+    // still obeyed - this only fills the silence.
+    //
+    // Examples are never the silent answer, whatever the setting says. Those are
+    // somebody else's collection rather than scaffolding, which is the same line
+    // the installer draws.
+    $wantStructure = array_key_exists('with_structure', $in)
+        ? !empty($in['with_structure'])
+        : (string) setting('library_autofill', '1') === '1';
+
     $note = '';
-    if (!empty($in['with_structure']) || !empty($in['with_examples'])) {
+    if ($wantStructure || !empty($in['with_examples'])) {
         $note = library_populate($id, [
-            'structure' => !empty($in['with_structure']),
+            'structure' => $wantStructure,
             'examples'  => !empty($in['with_examples']),
         ]);
     }

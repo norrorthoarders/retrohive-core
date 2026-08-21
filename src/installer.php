@@ -1460,6 +1460,29 @@ function web_server_account(string $wantUser = '', string $wantGroup = ''): arra
  *        `install.metadata_sources` flag, which is what an answer file with no
  *        [metadata] section still carries.
  */
+/**
+ * The first exchange rates, at install.
+ *
+ * An instance whose currency is SEK and whose sources quote in dollars needs a
+ * rate before it can show anybody a price, and until now nothing fetched one:
+ * the table started empty and stayed empty until somebody found the refresh in
+ * the admin pages. So a fresh install answered "what is this worth" with the
+ * source's own currency and no conversion, which reads as the feature not
+ * working rather than as a table nobody has filled.
+ *
+ * Not fatal, and reported rather than thrown. This reaches the European Central
+ * Bank, and an install behind a firewall that cannot must still finish - it is
+ * the one step here whose failure costs nothing that cannot be had later with
+ * one press.
+ */
+function installer_seed_exchange_rates(): array
+{
+    if (!function_exists('exchange_rates_refresh')) {
+        return ['written' => 0, 'error' => 'Exchange rates: the metadata layer is not loaded.'];
+    }
+    return exchange_rates_refresh();
+}
+
 function installer_enable_metadata_sources(array $settings = [], bool $default = true): array
 {
     if (!function_exists('metadata_provider_types')) {
