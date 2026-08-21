@@ -1,5 +1,33 @@
 # Changelog
 
+**The PC had no environments at all.**
+
+Amiga had four and the C64 two; the one platform where "which of these does it
+run under" matters most had nothing to answer with - a 1993 DOS game and a 1998
+Windows game are different software on one machine. MS-DOS, Windows 3.x, 9x, NT,
+XP, Vista, 7, 10, 11 and Linux, in the order they arrived and spaced by ten so a
+version nobody thought of can go between two.
+
+**A price can be recorded by hand.** `POST /items/{id}/observations`. Observations
+arrived from an agent or not at all, so a figure the owner knew for certain -
+three copies sold locally, a dealer's asking price - could only go in the entry's
+own "estimated value", which was undated and single-currency. Recorded against
+the title and platform like every other observation, with `source: manual` so the
+next sync does not overwrite it as a stale agent figure. The date defaults to
+today, the band to this copy's own, the currency to the instance's.
+
+**And the day an observation was seen is editable.** It was the one field on the
+row nobody could change - and a price is a fact about a day: the chart places it
+on a timeline and the conversion uses that day's rate, so a mistyped date was
+permanent.
+
+Two things caught by running it rather than reading it: `api_input()` does not
+exist (`api_body()` does), and the new date block sat *below* the "did you send
+anything" check that guards it, so a date-only correction was refused. Both found
+by patching a live observation three ways - date only, empty, and rubbish.
+
+This package is **build 234**.
+
 **The currency answer never reached the setting that shows it.**
 
 An install told `SEK` wrote it to the configuration file, and `display_currency()`

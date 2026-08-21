@@ -34,5 +34,65 @@
     "name": "GEOS",
     "platform": "c64",
     "sort_order": 20
+  },
+  {
+    "slug": "dos",
+    "name": "MS-DOS",
+    "platform": "pc",
+    "sort_order": 10
+  },
+  {
+    "slug": "win3x",
+    "name": "Windows 3.x",
+    "platform": "pc",
+    "sort_order": 20
+  },
+  {
+    "slug": "win9x",
+    "name": "Windows 9x",
+    "platform": "pc",
+    "sort_order": 30
+  },
+  {
+    "slug": "winnt",
+    "name": "Windows NT",
+    "platform": "pc",
+    "sort_order": 40
+  },
+  {
+    "slug": "winxp",
+    "name": "Windows XP",
+    "platform": "pc",
+    "sort_order": 50
+  },
+  {
+    "slug": "winvista",
+    "name": "Windows Vista",
+    "platform": "pc",
+    "sort_order": 60
+  },
+  {
+    "slug": "win7",
+    "name": "Windows 7",
+    "platform": "pc",
+    "sort_order": 70
+  },
+  {
+    "slug": "win10",
+    "name": "Windows 10",
+    "platform": "pc",
+    "sort_order": 80
+  },
+  {
+    "slug": "win11",
+    "name": "Windows 11",
+    "platform": "pc",
+    "sort_order": 90
+  },
+  {
+    "slug": "linux",
+    "name": "Linux",
+    "platform": "pc",
+    "sort_order": 100
   }
 ]

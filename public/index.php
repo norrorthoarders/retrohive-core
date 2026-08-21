@@ -307,6 +307,8 @@ if (str_starts_with($path, '/api/')) {
         // The observations themselves, for correcting one.
         ['GET',    '#^/api/v1/items/(\d+)/observations$#',
                                                             fn($id) => api_item_observations((int) $id)],
+        ['POST',   '#^/api/v1/items/(\d+)/observations$#',
+                                                            fn($id) => api_item_observations_create((int) $id)],
         ['PATCH',  '#^/api/v1/observations/(\d+)$#',       fn($id) => api_observation_update((int) $id)],
         ['DELETE', '#^/api/v1/observations/(\d+)$#',       fn($id) => api_observation_delete((int) $id)],
         ['POST',   '#^/api/v1/items/(\d+)/images$#',      fn($id) => api_item_images_upload((int) $id)],

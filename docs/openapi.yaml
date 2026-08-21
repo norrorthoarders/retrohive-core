@@ -3759,6 +3759,33 @@ paths:
         "200": { description: OK }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { description: No such entry, or not one this account may see }
+    post:
+      tags: [Items]
+      summary: Record one by hand
+      description: >
+        A market's quote is evidence and so is a shelf: somebody who watched
+        three copies sell locally knows something no source does, and had no way
+        to say it - observations arrived from an agent or not at all.
+
+        Recorded against the title and platform rather than the entry, which is
+        what the table holds: two shelves with the same game on the same machine
+        see the same observations. `source` is always `manual`, so the next sync
+        does not treat it as a stale agent figure and overwrite it.
+
+        `observed_on` defaults to today, `band` to this copy's own, and
+        `currency` to the instance's display currency - somebody typing what a
+        copy went for locally is not quoting dollars.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "201": { description: Recorded }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: That library is read-only for this account }
+        "404": { description: No such entry }
+        "422": { description: Some fields need attention }
 
   /observations/{id}:
     patch:

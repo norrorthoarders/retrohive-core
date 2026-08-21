@@ -6659,6 +6659,82 @@ function observation_item(array $row): ?array
  * title or the date: those are what the row *is*, and changing one would be
  * writing a different observation over this one rather than correcting it.
  */
+/**
+ * Record an observation by hand.
+ *
+ * A market's quote is evidence, and so is a shelf: somebody who watched three
+ * copies sell locally knows something no source does. There was no way to say
+ * it - observations arrived from an agent or not at all - so a price the owner
+ * knew for certain could only be typed into the entry's own "estimated value",
+ * which is a different, undated, single-currency field.
+ *
+ * Against the *title and platform* rather than the entry, which is what the
+ * table holds: two shelves with the same game on the same machine see the same
+ * observations, and that is the point of them.
+ */
+function api_item_observations_create(int $itemId): void
+{
+    api_require_write();
+    $item = find_item($itemId);
+    if ($item === null) {
+        api_error('not_found', 'No catalogue entry with that id.', 404);
+    }
+    if (!can_write_item($item)) {
+        api_error('forbidden', 'That library is read-only for your account.', 403);
+    }
+
+    $in = api_body();
+    $errors = [];
+
+    $amount = (float) ($in['amount'] ?? 0);
+    if ($amount <= 0) {
+        $errors['amount'] = 'An amount must be more than nothing.';
+    }
+
+    $band = (string) ($in['band'] ?? price_band_for_completeness($item['completeness'] ?? null));
+    if (!in_array($band, price_bands(), true)) {
+        $errors['band'] = 'Not a condition this records prices for.';
+    }
+
+    // Today when nothing is said, because "I saw this today" is what somebody
+    // typing a price into a form usually means.
+    $day = trim((string) ($in['observed_on'] ?? '')) ?: date('Y-m-d');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) || strtotime($day) === false) {
+        $errors['observed_on'] = 'A date like 2026-08-21.';
+    }
+
+    // The instance's own money by default: somebody typing what a copy went for
+    // locally is not quoting dollars.
+    $currency = strtoupper(trim((string) ($in['currency'] ?? ''))) ?: display_currency();
+    if (!preg_match('/^[A-Z]{3}$/', $currency)) {
+        $errors['currency'] = 'A three-letter code, such as SEK.';
+    }
+
+    if ($errors !== []) {
+        api_error('validation_failed', 'Some fields need attention.', 422, $errors);
+    }
+
+    $newId = (int) insert_row('price_observations', [
+        'source'      => 'manual',
+        'platform_id' => $item['platform_id'] === null ? null : (int) $item['platform_id'],
+        'title'       => (string) $item['title'],
+        'band'        => $band,
+        'amount'      => $amount,
+        'currency'    => $currency,
+        'observed_on' => $day,
+        'sales_count' => isset($in['sales_count']) && $in['sales_count'] !== ''
+            ? max(0, (int) $in['sales_count']) : null,
+        'volume_note' => trim((string) ($in['volume_note'] ?? '')) !== ''
+            ? mb_substr(trim((string) $in['volume_note']), 0, 60) : null,
+    ]);
+
+    log_event('metadata', 'price.recorded',
+        sprintf('observation %d recorded by hand for "%s"', $newId, (string) $item['title']),
+        LOG_INFO, ['observation_id' => $newId]);
+
+    api_ok(one('SELECT * FROM price_observations WHERE id = ?', [$newId]), null, 201);
+}
+
 function api_observation_update(int $id): void
 {
     api_require_auth();
@@ -6691,8 +6767,27 @@ function api_observation_update(int $id): void
         $fields['volume_note'] = $note === '' ? null : mb_substr($note, 0, 60);
     }
 
+    // When it was seen, which was the one thing on the row nobody could change.
+    //
+    // A price is a fact about a day - the chart places it on a timeline and the
+    // conversion uses that day's rate - so an observation typed in with the
+    // wrong date is wrong in a way no other field can correct. It was editable
+    // nowhere, which made a mistyped day permanent.
+    if (array_key_exists('observed_on', $in)) {
+        $day = trim((string) $in['observed_on']);
+        if ($day === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) || strtotime($day) === false) {
+            api_error('validation_failed', 'A date like 2026-08-21.', 422,
+                       ['observed_on' => 'A date like 2026-08-21.']);
+        }
+        $fields['observed_on'] = $day;
+    }
+
+    // Named as the four they are, and checked before `source` is added below -
+    // that line sets a field on every call, so a check running after it would
+    // find something every time and never refuse anything.
     if ($fields === []) {
-        api_error('validation_failed', 'Send an amount, a sales count or a volume note.', 422);
+        api_error('validation_failed',
+                  'Send an amount, a date, a sales count or a volume note.', 422);
     }
 
     // The source becomes whoever typed it.
