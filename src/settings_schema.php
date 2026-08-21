@@ -63,9 +63,19 @@ function settings_schema(): array
                 'client_url' => [
                     'kind'  => 'url',
                     'label' => 'Where people go',
-                    'help'  => 'The address of the interface people actually use, if it is not the '
-                             . 'one above - a confirmation or invitation link is built from this. '
-                             . 'Blank uses the public address.',
+                    // "Blank uses the public address" was true and is not.
+                    //
+                    // That fallback meant an unset value resolved to this engine,
+                    // so `/` redirected to itself and a browser gave up with "too
+                    // many redirects". It is gone, and this said otherwise -
+                    // which is worse than saying nothing, because somebody reads
+                    // it and leaves the field empty on purpose.
+                    'help'  => 'The address of the interface people actually use - an engine at '
+                             . 'https://retro.example serving its client from /web wants '
+                             . 'https://retro.example/web. Confirmation and invitation links are '
+                             . 'built from it. It cannot be the same as the public address above: '
+                             . 'an address pointing at itself is a redirect loop rather than a way '
+                             . 'in, and blank means the root of this instance says so plainly.',
                     'max'   => 255,
                 ],
                 'site_url' => [
@@ -119,8 +129,15 @@ function settings_schema(): array
                 'libraries_deletable' => [
                     'kind'    => 'bool',
                     'label'   => 'Owners may permanently delete their own libraries',
-                    'help'    => 'Off means a library can only be emptied, not removed.',
-                    'default' => '',
+                    'help'    => 'Off means an owner can empty a library but not remove it, and has '
+                               . 'to ask an administrator. On by default, which is what every '
+                               . 'instance has done in practice: nothing read this setting until '
+                               . 'now, so an administrator could switch it off and owners went on '
+                               . 'deleting.',
+                    // On, because that is what has actually been happening. A
+                    // dead setting coming to life must not quietly change what a
+                    // running instance does.
+                    'default' => '1',
                 ],
             ],
         ],

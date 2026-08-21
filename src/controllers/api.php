@@ -4786,9 +4786,21 @@ function api_metadata_apply(): void
 
     $pricesKept = 0;
     if ($wantPrices) {
+        // Recorded under **this entry's** title, not the source's.
+        //
+        // An observation is keyed on a title and a platform, and both readers -
+        // the history behind the chart and the list on the edit screen - ask by
+        // the entry's own title. This wrote the *candidate's*: PriceCharting
+        // calls a release "Dune (Amiga)" where the shelf says "Dune", so a
+        // lookup reported "6 prices recorded" and the entry showed none. The
+        // prices were in the table, filed under a name nothing asks for.
+        //
+        // The provider and its remote id still travel with the row, so a later
+        // sync matches the same listing; only the key somebody looks it up by
+        // changes.
         $pricesKept = record_price_observations(
             (string) ($candidate['provider'] ?? 'unknown'),
-            (string) ($candidate['title'] ?? $item['title']),
+            (string) $item['title'],
             $item['platform_id'] === null ? null : (int) $item['platform_id'],
             $candidate['prices'],
             isset($candidate['remote_id']) ? (string) $candidate['remote_id'] : null,
@@ -5280,6 +5292,41 @@ function api_libraries_delete(int $id): void
         api_error('validation_failed',
             'A personal library cannot be deleted. It is where your own things live, '
           . 'and every account has exactly one.', 422);
+    }
+
+    // The setting that said it governed this, and did not.
+    //
+    // `libraries_deletable` is on the Security tab, labelled "Owners may
+    // permanently delete their own libraries", and **nothing read it** - one
+    // grep over the engine found the schema entry and no other mention. An
+    // administrator could switch it off, be told "a library can only be emptied,
+    // not removed", and owners went on deleting libraries.
+    //
+    // A switch that changes nothing is worse than a missing one: somebody
+    // decided a policy, was told it had taken, and it had not.
+    //
+    // An administrator is not stopped by it. The setting is about what *owners*
+    // may do to their own shelves; an instance administrator removing one is the
+    // thing this policy leaves in place, and api_admin_libraries_delete() is a
+    // separate path with its own rules.
+    // Read with '1' as the fallback, and the schema default corrected to match.
+    //
+    // The schema said `'default' => ''`, which in this file means *off* - so
+    // wiring the check up naively would have stopped every owner on every
+    // existing instance from deleting anything, on the strength of a switch
+    // nobody had ever been able to set. A dead setting coming to life must not
+    // change what a running instance does.
+    // `is_admin_user(acting_user())`, not `is_admin()`.
+    //
+    // `is_admin()` reads current_user(), which is the *session* - and an API
+    // request carries a token, not a session, so it is null and every
+    // administrator counted as an ordinary owner. Caught by trying it: a token
+    // belonging to an administrator was refused by their own instance's switch.
+    if ((string) setting('libraries_deletable', '1') !== '1'
+        && !is_admin_user(acting_user())) {
+        api_error('validation_failed',
+            'This instance does not let owners delete libraries. Empty it instead, or ask '
+          . 'an administrator.', 422);
     }
 
     $count = (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ? AND deleted_at IS NULL', [$id]);

@@ -552,8 +552,22 @@ function send_security_headers(): void
 function client_base(): string
 {
     $base = rtrim((string) setting('client_url', ''), '/');
-    if ($base === '') {
-        $base = rtrim((string) setting('site_url', ''), '/');
+    $self = rtrim((string) setting('site_url', ''), '/');
+
+    // No falling back to this instance's own address.
+    //
+    // It used to: an unset `client_url` became `site_url`, which is the engine -
+    // so `/` answered with a redirect to `/`, and a browser followed it until it
+    // gave up. "Too many redirects" is a worse answer than "not configured",
+    // because it looks like a broken server rather than a setting nobody has
+    // filled in.
+    //
+    // The same trap catches a *set* one: an engine at
+    // https://retrohive.noh.nu with the client at /web needs `client_url` to say
+    // `https://retrohive.noh.nu/web`, and the two addresses being equal is
+    // always somebody having pasted the wrong one.
+    if ($base === '' || $base === $self) {
+        return '';
     }
     return $base;
 }

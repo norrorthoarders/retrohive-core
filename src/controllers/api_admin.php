@@ -540,7 +540,17 @@ function log_entry_to_api(array $row): array
             'type' => (string) $row['subject_type'],
             'id'   => $row['subject_id'] === null ? null : (int) $row['subject_id'],
         ],
-        'ip'         => $row['ip'] ?? null,
+        // Unpacked, because the column holds what inet_pton() made of it.
+        //
+        // `varbinary(16)` is four raw bytes for an IPv4 address, and this sent
+        // them as-is - so every client received "\x7f\x00\x00\x01" where it
+        // wanted 127.0.0.1, and a JSON decoder that expects a string got a
+        // control character salad. The web client reads the same field and shows
+        // the same nonsense; it was simply less obvious in a table than in a
+        // decoder that refuses.
+        'ip'         => ($row['ip'] ?? null) === null || $row['ip'] === ''
+            ? null
+            : (@inet_ntop($row['ip']) ?: null),
         'created_at' => api_datetime($row['created_at'] ?? null),
     ];
 }

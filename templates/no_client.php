@@ -18,8 +18,15 @@
     and has not been filled in.
   </p>
   <p class="hint">
-    Until it is, open the web client directly. Confirmation and invitation links
-    are built from the same setting, so they will point here rather than at the
-    client too.
+    It must be the interface's own address and not this one. An engine at
+    <code>https://retrohive.example</code> serving its client from
+    <code>/web</code> wants <code>https://retrohive.example/web</code> here -
+    the two being the same is what this page is usually saying, because an
+    address pointing at itself is a redirect loop rather than a way in.
+  </p>
+  <p class="hint">
+    Until it is filled in, open the web client directly. Confirmation and
+    invitation links are built from the same setting, so they point here rather
+    than at the client too.
   </p>
 </div>

@@ -1,5 +1,92 @@
 # Changelog
 
+**A setting that governed nothing.**
+
+`libraries_deletable` has sat on the Security tab labelled "Owners may
+permanently delete their own libraries", with help reading "Off means a library
+can only be emptied, not removed" - and **nothing read it**. One grep over the
+engine found the schema entry and no other mention. An administrator could switch
+it off, be told the policy had taken, and owners went on deleting libraries.
+
+That is worse than a missing switch: somebody decided a policy, was told it was
+in force, and it was not.
+
+It is read now, in `api_libraries_delete()`. Two things had to be right for
+turning it on not to break instances:
+
+- **The schema default said `''`, which in this file means off.** Wiring the
+  check up naively would have stopped every owner on every existing instance from
+  deleting anything, on the strength of a switch nobody had ever been able to
+  set. The default is `'1'` - what every instance has actually been doing - so a
+  dead setting coming to life changes nothing about a running one.
+- **`is_admin()` reads the session, and an API request has a token.** So it was
+  false for every administrator and their own switch locked them out. Caught by
+  trying it: an administrator's token was refused, and it is
+  `is_admin_user(acting_user())` now.
+
+**And two help texts that had stopped being true.** "Where people go" still
+promised that blank falls back to the public address - the fallback removed in
+build 237, because it was the redirect loop. It now says what address it wants
+and why it cannot be this one.
+
+Pinned in `tests/acl.php`.
+
+This package is **build 238**.
+
+**An address pointing at itself is a redirect loop, not a way in.**
+
+Reported from a live instance: `url` and `client_url` both set to
+`https://retrohive.noh.nu`, so `/` answered with a redirect to `/` and a browser
+followed it until it gave up. The engine is at the root there and its client is
+served from `/web` - which is what `client_url` wants.
+
+`client_base()` refuses the two being equal, and **no longer falls back to
+`site_url` when `client_url` is unset**, which was the same trap arrived at by
+doing nothing at all: unset meant "this instance", which meant the loop. Both
+cases now answer "not configured", which is a true statement somebody can act on
+- "too many redirects" reads as a broken server rather than as a setting nobody
+has filled in.
+
+The page says which address it wants and why the two cannot be the same. So does
+the installer's guidance, `INSTALL.md`, and the example answer file, which now
+shows the pair as it should look.
+
+Pinned in `tests/schema.php`: the same address twice is refused, the client's own
+address is used, and unset does not fall back to the engine.
+
+This package is **build 237**.
+
+**The log sent raw bytes where an address belongs.**
+
+`logs.ip` is `varbinary(16)` - what `inet_pton()` made of the address - and the
+endpoint sent it as-is. So every client got `\x7f\x00\x00\x01` instead of
+127.0.0.1: a control-character salad in a JSON string, which a strict decoder
+refuses outright and a browser renders as nothing much.
+
+`inet_ntop()` on the way out. The web client reads the same field and has been
+showing the same nonsense; it was simply less obvious in a table than in a
+decoder that says no.
+
+This package is **build 236**.
+
+**A lookup said "6 prices recorded" and the entry showed none.**
+
+`/metadata/apply` wrote observations under the **candidate's** title -
+PriceCharting calls a release "Dune (Amiga)" where the shelf says "Dune" - while
+both readers ask by the entry's own title: the history behind the chart, and the
+list on the edit screen. So the prices were in the table the whole time, filed
+under a name nothing asks for.
+
+Recorded under the entry's title now. The provider and its remote id still travel
+with the row, so a later sync still matches the same listing; only the key
+somebody looks it up by changes.
+
+Pinned in `tests/prices.php`: a row under the source's name is invisible to the
+entry, one under the entry's is found. Two assertions that would have caught this
+the day it was written.
+
+This package is **build 235**.
+
 **The PC had no environments at all.**
 
 Amiga had four and the C64 two; the one platform where "which of these does it
